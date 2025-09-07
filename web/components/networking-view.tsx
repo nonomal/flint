@@ -29,6 +29,8 @@ import {
 } from "lucide-react"
 import { networkAPI, VirtualNetwork } from "@/lib/api"
 import { useToast } from "@/components/ui/use-toast"
+import { ErrorState } from "@/components/ui/error-state"
+import { SPACING, TYPOGRAPHY } from "@/lib/ui-constants"
 
 export function NetworkingView() {
   const { toast } = useToast()
@@ -50,6 +52,7 @@ export function NetworkingView() {
         setNetworks(data)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load networks')
+        // Don't reset networks on error - keep existing data
       } finally {
         setIsLoading(false)
       }
@@ -99,7 +102,7 @@ export function NetworkingView() {
   }
 
   const getStatusBadge = (network: VirtualNetwork) => {
-    if (network.state === "active") {
+    if (network.is_active) {
       return (
         <Badge className="bg-primary text-primary-foreground">
           <Activity className="mr-1 h-3 w-3" />
@@ -117,7 +120,7 @@ export function NetworkingView() {
   }
 
   const getPersistenceBadge = (network: VirtualNetwork) => {
-    if (network.autostart) {
+    if (network.is_persistent) {
       return (
         <Badge variant="outline" className="text-green-600 border-green-600">
           <Settings className="mr-1 h-3 w-3" />
@@ -136,10 +139,12 @@ export function NetworkingView() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="flex items-center gap-2">
-          <Loader2 className="h-6 w-6 animate-spin" />
-          <span>Loading networks...</span>
+      <div className={`${SPACING.section} ${SPACING.page}`}>
+        <div className="flex items-center justify-center min-h-[400px]">
+          <div className="flex items-center gap-2">
+            <Loader2 className="h-6 w-6 animate-spin" />
+            <span>Loading networks...</span>
+          </div>
         </div>
       </div>
     )
@@ -147,17 +152,24 @@ export function NetworkingView() {
 
   if (error) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-center">
-          <h2 className="text-xl font-semibold mb-2">Error Loading Networks</h2>
-          <p className="text-muted-foreground">{error}</p>
-        </div>
+      <div className={`${SPACING.section} ${SPACING.page}`}>
+        <ErrorState 
+          title="Error Loading Networks"
+          description={error}
+        />
       </div>
     )
   }
 
   return (
-    <div className="space-y-8 p-6 sm:p-8 lg:p-10">
+    <div className={`${SPACING.section} ${SPACING.page}`}>
+      {/* Page Header */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="space-y-1">
+          <h1 className={TYPOGRAPHY.pageTitle}>Networking</h1>
+          <p className="text-muted-foreground">Manage virtual networks and network interfaces</p>
+        </div>
+      </div>
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="space-y-1">
           <h2 className="text-xl font-semibold">Network Types</h2>
@@ -251,7 +263,7 @@ export function NetworkingView() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Total Networks</p>
-                <p className="text-2xl font-bold">{networks.length}</p>
+                <p className="text-2xl font-bold">{(networks || []).length}</p>
               </div>
               <Network className="h-8 w-8 text-muted-foreground" />
             </div>
@@ -264,7 +276,7 @@ export function NetworkingView() {
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Active Networks</p>
                 <p className="text-2xl font-bold text-primary">
-                  {networks.filter(n => n.state === "active").length}
+                  {(networks || []).filter(n => n.is_active === true).length}
                 </p>
               </div>
               <Wifi className="h-8 w-8 text-primary" />
@@ -277,7 +289,7 @@ export function NetworkingView() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Inactive Networks</p>
-                <p className="text-2xl font-bold">{networks.filter(n => n.state !== "active").length}</p>
+                <p className="text-2xl font-bold">{(networks || []).filter(n => n.is_active !== true).length}</p>
               </div>
               <WifiOff className="h-8 w-8 text-muted-foreground" />
             </div>
@@ -290,7 +302,7 @@ export function NetworkingView() {
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Persistent</p>
                 <p className="text-2xl font-bold text-accent">
-                  {networks.filter(n => n.autostart).length}
+                  {(networks || []).filter(n => n.is_persistent === true).length}
                 </p>
               </div>
               <Settings className="h-8 w-8 text-accent" />
@@ -303,7 +315,7 @@ export function NetworkingView() {
       <Card className="shadow-sm border-border/50">
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center justify-between">
-            <span className="text-lg font-semibold">Virtual Networks ({networks.length})</span>
+            <span className="text-lg font-semibold">Virtual Networks ({(networks || []).length})</span>
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
@@ -320,24 +332,16 @@ export function NetworkingView() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {networks.map((network) => (
+              {(networks || []).map((network) => (
                 <TableRow key={network.name} className="hover:bg-muted/50">
                   <TableCell className="font-medium px-4">{network.name}</TableCell>
                   <TableCell className="px-4">{getStatusBadge(network)}</TableCell>
                   <TableCell className="px-4">{getPersistenceBadge(network)}</TableCell>
                   <TableCell className="font-mono px-4">{network.bridge}</TableCell>
-                  <TableCell className="font-mono px-4">{network.type}</TableCell>
+                  <TableCell className="font-mono px-4">{network.type || "bridge"}</TableCell>
                   <TableCell className="px-4">
                     <div className="flex flex-wrap gap-1">
-                      {Array.isArray(network.connectedVMs) && network.connectedVMs.length > 0 ? (
-                        network.connectedVMs.map((vmName, index) => (
-                          <span key={index} className="text-xs bg-muted px-2 py-1 rounded text-muted-foreground">
-                            {vmName}
-                          </span>
-                        ))
-                      ) : (
-                        <span className="text-muted-foreground text-xs">No VMs</span>
-                      )}
+                      <span className="text-muted-foreground text-xs">No VMs</span>
                     </div>
                   </TableCell>
                   <TableCell className="px-4">
@@ -392,6 +396,126 @@ export function NetworkingView() {
           </Table>
         </CardContent>
       </Card>
+
+      {/* Edit Network Dialog */}
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Edit Network</DialogTitle>
+            <DialogDescription>
+              Modify network settings. Note: Some changes may require network restart.
+            </DialogDescription>
+          </DialogHeader>
+          {editingNetwork && (
+            <form onSubmit={async (e) => {
+              e.preventDefault()
+              if (!editingNetwork) return
+
+              try {
+                const action = editingNetwork.is_active ? "stop" : "start"
+                
+                const response = await fetch(`/api/networks/${editingNetwork.name}`, {
+                  method: 'PUT',
+                  headers: {
+                    'Content-Type': 'application/json',
+                  },
+                  credentials: 'include',
+                  body: JSON.stringify({ action })
+                })
+
+                if (!response.ok) {
+                  const errorData = await response.json().catch(() => ({}))
+                  throw new Error(errorData.error || `Failed to update network (HTTP ${response.status})`)
+                }
+
+                // Refresh networks list
+                const updatedNetworks = await networkAPI.getNetworks()
+                setNetworks(updatedNetworks)
+
+                toast({
+                  title: "Success",
+                  description: `Network "${editingNetwork.name}" ${action}ed successfully`,
+                })
+                setIsEditDialogOpen(false)
+                setEditingNetwork(null)
+              } catch (err) {
+                toast({
+                  title: "Update Failed",
+                  description: err instanceof Error ? err.message : "Failed to update network",
+                  variant: "destructive",
+                })
+              }
+            }}>
+              <div className="grid gap-4 py-4">
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="edit-name" className="text-right">
+                    Name
+                  </Label>
+                  <Input
+                    id="edit-name"
+                    value={editingNetwork.name}
+                    className="col-span-3"
+                    disabled
+                    title="Network name cannot be changed"
+                  />
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="edit-bridge" className="text-right">
+                    Bridge
+                  </Label>
+                  <Input
+                    id="edit-bridge"
+                    value={editingNetwork.bridge}
+                    className="col-span-3"
+                    disabled
+                    title="Bridge name cannot be changed after creation"
+                  />
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="edit-status" className="text-right">
+                    Action
+                  </Label>
+                  <div className="col-span-3">
+                    <div className="flex items-center gap-2">
+                      {editingNetwork.is_active ? (
+                        <Badge className="bg-green-500 text-white">Currently Active</Badge>
+                      ) : (
+                        <Badge variant="secondary">Currently Inactive</Badge>
+                      )}
+                      <span className="text-sm text-muted-foreground">
+                        → Will {editingNetwork.is_active ? "stop" : "start"} network
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="edit-persistent" className="text-right">
+                    Persistent
+                  </Label>
+                  <div className="col-span-3">
+                    {editingNetwork.is_persistent ? (
+                      <Badge className="bg-blue-500 text-white">Yes</Badge>
+                    ) : (
+                      <Badge variant="outline">No</Badge>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => {
+                  setIsEditDialogOpen(false)
+                  setEditingNetwork(null)
+                }}>
+                  Cancel
+                </Button>
+                <Button type="submit">
+                  {editingNetwork.is_active ? "Stop Network" : "Start Network"}
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

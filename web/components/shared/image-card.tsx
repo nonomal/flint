@@ -22,6 +22,7 @@ import {
   Trash2
 } from "lucide-react"
 import { Image } from "@/lib/api"
+import { TRANSITIONS, EFFECTS } from "@/lib/ui-constants"
 
 interface ImageCardProps {
   image: Image
@@ -97,6 +98,10 @@ export function ImageCard({ image, onAction, onDelete }: ImageCardProps) {
   const handleDelete = async () => {
     if (!onDelete) return
     
+    if (!confirm(`Are you sure you want to delete "${image.name}"? This action cannot be undone.`)) {
+      return
+    }
+    
     setIsDeleting(true)
     try {
       await onDelete(image.id)
@@ -106,55 +111,30 @@ export function ImageCard({ image, onAction, onDelete }: ImageCardProps) {
   }
 
   return (
-    <Card className="shadow-sm hover:shadow-md transition-shadow duration-200">
+    <Card className={`${EFFECTS.shadow.sm} ${TRANSITIONS.normal}`}>
       <CardHeader className="pb-4">
         <div className="flex items-start justify-between gap-3">
           <CardTitle className="flex items-start gap-2 text-base font-semibold min-w-0 flex-1">
             {getTypeIcon(image.type)}
             <span className="break-words leading-tight">{image.name}</span>
           </CardTitle>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                <MoreHorizontal className="h-4 w-4" />
-                <span className="sr-only">Open menu</span>
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem 
-                onClick={() => {
-                  // Create download link
-                  const link = document.createElement('a')
-                  link.href = `/api/images/${image.id}/download`
-                  link.download = image.name
-                  document.body.appendChild(link)
-                  link.click()
-                  document.body.removeChild(link)
-                }}
-              >
-                <Download className="mr-2 h-4 w-4" />
-                Download
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem 
-                onClick={handleDelete}
-                disabled={isDeleting}
-                className="text-destructive focus:text-destructive"
-              >
-                {isDeleting ? (
-                  <>
-                    <div className="mr-2 h-4 w-4 animate-spin" />
-                    Deleting...
-                  </>
-                ) : (
-                  <>
-                    <Trash2 className="mr-2 h-4 w-4" />
-                    Delete
-                  </>
-                )}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              handleDelete()
+            }}
+            disabled={isDeleting}
+            className="h-8 w-8 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+          >
+            {isDeleting ? (
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-destructive border-t-transparent" />
+            ) : (
+              <Trash2 className="h-4 w-4" />
+            )}
+          </Button>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -177,6 +157,11 @@ export function ImageCard({ image, onAction, onDelete }: ImageCardProps) {
               <span className="font-medium text-right break-words max-w-[60%]">{image.os_info}</span>
             </div>
           )}
+          
+          <div className="flex justify-between items-start">
+            <span className="text-muted-foreground">Path</span>
+            <span className="font-mono text-xs text-right break-all max-w-[60%]">{image.path || `/var/lib/libvirt/images/${image.name}`}</span>
+          </div>
           
           <div className="flex justify-between items-start">
             <span className="text-muted-foreground">Created</span>

@@ -9,6 +9,10 @@ import { Button } from "@/components/ui/button"
 // import { DatePicker } from "@/components/ui/date-picker"
 import { cn } from "@/lib/utils"
 import { hostAPI } from "@/lib/api"
+import { refreshPage } from "@/lib/navigation"
+import { SPACING, TYPOGRAPHY, GRIDS, TRANSITIONS, COLORS } from "@/lib/ui-constants"
+import { ConsistentButton } from "@/components/ui/consistent-button"
+import { ErrorState } from "@/components/ui/error-state"
 import { useToast } from "@/components/ui/use-toast"
 import {
   Activity,
@@ -32,6 +36,7 @@ export function AnalyticsView() {
   const [activeTab, setActiveTab] = useState("overview")
   const [timeRange, setTimeRange] = useState("24h")
   const [metrics, setMetrics] = useState<any | null>(null)
+  const [hostStatus, setHostStatus] = useState<any | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -39,8 +44,12 @@ export function AnalyticsView() {
     const fetchMetrics = async () => {
       try {
         setIsLoading(true)
-        const data = await hostAPI.getResources()
-        setMetrics(data)
+        const [resourcesData, statusData] = await Promise.all([
+          hostAPI.getResources(),
+          hostAPI.getStatus()
+        ])
+        setMetrics(resourcesData)
+        setHostStatus(statusData)
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load analytics data")
         toast({
@@ -54,6 +63,10 @@ export function AnalyticsView() {
     }
 
     fetchMetrics()
+    
+    // Set up auto-refresh every 30 seconds
+    const interval = setInterval(fetchMetrics, 30000)
+    return () => clearInterval(interval)
   }, [timeRange])
 
   if (isLoading) {
@@ -100,48 +113,83 @@ export function AnalyticsView() {
         <div className="flex items-center justify-between">
           <h1 className="text-3xl font-display font-bold text-foreground">Analytics</h1>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => window.location.reload()}>
+            <Button variant="outline" size="sm" onClick={() => refreshPage()}>
               <RefreshCw className="mr-2 h-4 w-4" />
               Refresh
             </Button>
           </div>
         </div>
-        <div className="text-center py-12">
-          <h2 className="text-xl font-semibold mb-2 text-destructive">Error Loading Analytics</h2>
-          <p className="text-muted-foreground mb-4">{error}</p>
-          <Button variant="outline" onClick={() => window.location.reload()}>
-            <RefreshCw className="mr-2 h-4 w-4" />
-            Try Again
-          </Button>
+        <div className={`${SPACING.section} ${SPACING.page}`}>
+          <ErrorState 
+            title="Error Loading Analytics"
+            description={error}
+          />
         </div>
       </div>
     )
   }
 
   return (
-    <div className="space-y-8 animate-slide-up-fade">
+    <div className={`${SPACING.section} ${TRANSITIONS.slideUp}`}>
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-display font-bold tracking-tight text-foreground">Analytics</h1>
+          <h1 className={TYPOGRAPHY.pageTitle}>Analytics</h1>
           <p className="text-muted-foreground mt-1">Monitor and analyze your virtualization infrastructure performance</p>
         </div>
         <div className="flex items-center gap-2">
-          <Select value={timeRange} onValueChange={setTimeRange}>
-            <SelectTrigger className="w-32 border-border/50 bg-surface-2">
-              <SelectValue placeholder="24h" />
-            </SelectTrigger>
-            <SelectContent className="bg-surface-2 border-border/50">
-              <SelectItem value="1h">1 Hour</SelectItem>
-              <SelectItem value="6h">6 Hours</SelectItem>
-              <SelectItem value="24h">24 Hours</SelectItem>
-              <SelectItem value="7d">7 Days</SelectItem>
-              <SelectItem value="30d">30 Days</SelectItem>
-            </SelectContent>
-          </Select>
-          <Button variant="outline" size="sm">
-            <Download className="mr-2 h-4 w-4" />
+          <ConsistentButton 
+            variant="outline" 
+            size="sm"
+            onClick={() => {
+              refreshPage()
+            }}
+            icon={<RefreshCw className="h-4 w-4" />}
+          >
+            Refresh
+          </ConsistentButton>
+          <ConsistentButton 
+            variant="outline" 
+            size="sm"
+            onClick={() => {
+              if (!metrics || !hostStatus) return
+              
+              const data = {
+                timestamp: new Date().toISOString(),
+                timeRange,
+                host: {
+                  hostname: hostStatus.hostname,
+                  hypervisor: hostStatus.hypervisor_version,
+                  total_vms: hostStatus.total_vms,
+                  running_vms: hostStatus.running_vms
+                },
+                resources: {
+                  cpu_cores: metrics.cpu_cores,
+                  total_memory_kb: metrics.total_memory_kb,
+                  free_memory_kb: metrics.free_memory_kb,
+                  storage_total_b: metrics.storage_total_b,
+                  storage_used_b: metrics.storage_used_b
+                }
+              }
+              
+              const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+              const url = URL.createObjectURL(blob)
+              const link = document.createElement('a')
+              link.href = url
+              link.download = `flint-analytics-${new Date().toISOString().split('T')[0]}.json`
+              document.body.appendChild(link)
+              link.click()
+              document.body.removeChild(link)
+              URL.revokeObjectURL(url)
+              
+              toast({
+                title: "Export Complete",
+                description: "Analytics data exported successfully",
+              })
+            }}
+            icon={<Download className="h-4 w-4" />}
+          >
             Export
-          </Button>
+          </ConsistentButton>
         </div>
       </div>
 
@@ -166,42 +214,86 @@ export function AnalyticsView() {
         </TabsList>
 
         <TabsContent value="overview" className="space-y-6">
-          <div className="grid gap-6 lg:grid-cols-2">
-            <Card className="animate-fade-in">
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2">
-                  <Activity className="h-4 w-4" />
-                  CPU Usage
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="h-64 bg-surface-2 rounded-lg shadow-sm">
-                  {/* Placeholder for CPU chart */}
-                  <div className="flex items-center justify-center h-full">
-                    <div className="text-center text-muted-foreground">
-                      <BarChart3 className="h-12 w-12 mb-2" />
-                      <p className="text-sm">CPU analytics chart</p>
-                    </div>
+          {/* Key Metrics Cards */}
+          <div className={`${GRIDS.fourCol} ${SPACING.gridCompact}`}>
+            <Card>
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">CPU Cores</p>
+                    <p className="text-2xl font-bold">{metrics?.cpu_cores || 0}</p>
                   </div>
+                  <Cpu className="h-8 w-8 text-muted-foreground" />
                 </div>
               </CardContent>
             </Card>
+            
+            <Card>
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Memory Usage</p>
+                    <p className="text-2xl font-bold">
+                      {metrics ? `${Math.round(((metrics.total_memory_kb - metrics.free_memory_kb) / metrics.total_memory_kb) * 100)}%` : '0%'}
+                    </p>
+                  </div>
+                  <MemoryStick className="h-8 w-8 text-muted-foreground" />
+                </div>
+              </CardContent>
+            </Card>
+            
+            <Card>
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Storage Usage</p>
+                    <p className="text-2xl font-bold">
+                      {metrics ? `${Math.round((metrics.storage_used_b / metrics.storage_total_b) * 100)}%` : '0%'}
+                    </p>
+                  </div>
+                  <HardDrive className="h-8 w-8 text-muted-foreground" />
+                </div>
+              </CardContent>
+            </Card>
+            
+            <Card>
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Running VMs</p>
+                    <p className="text-2xl font-bold">{hostStatus?.running_vms || 0}</p>
+                  </div>
+                  <Server className="h-8 w-8 text-muted-foreground" />
+                </div>
+              </CardContent>
+            </Card>
+          </div>
 
+          <div className={`${GRIDS.twoCol} ${SPACING.grid}`}>
             <Card className="animate-fade-in">
               <CardHeader className="pb-3">
                 <CardTitle className="flex items-center gap-2">
-                  <TrendingUp className="h-4 w-4" />
+                  <MemoryStick className="h-4 w-4" />
                   Memory Usage
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="h-64 bg-surface-2 rounded-lg shadow-sm">
-                  {/* Placeholder for memory chart */}
-                  <div className="flex items-center justify-center h-full">
-                    <div className="text-center text-muted-foreground">
-                      <LineChart className="h-12 w-12 mb-2" />
-                      <p className="text-sm">Memory analytics chart</p>
-                    </div>
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span>Used Memory</span>
+                    <span>{metrics ? `${Math.round((metrics.total_memory_kb - metrics.free_memory_kb) / 1024 / 1024)}GB / ${Math.round(metrics.total_memory_kb / 1024 / 1024)}GB` : 'Loading...'}</span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-3">
+                    <div
+                      className="bg-primary h-3 rounded-full transition-all duration-300"
+                      style={{ 
+                        width: metrics ? `${((metrics.total_memory_kb - metrics.free_memory_kb) / metrics.total_memory_kb) * 100}%` : '0%' 
+                      }}
+                    />
+                  </div>
+                  <div className="flex justify-between text-xs text-muted-foreground">
+                    <span>Free: {metrics ? `${Math.round(metrics.free_memory_kb / 1024 / 1024)}GB` : '0GB'}</span>
+                    <span>{metrics ? `${Math.round(((metrics.total_memory_kb - metrics.free_memory_kb) / metrics.total_memory_kb) * 100)}%` : '0%'} used</span>
                   </div>
                 </div>
               </CardContent>
@@ -215,13 +307,22 @@ export function AnalyticsView() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="h-64 bg-surface-2 rounded-lg shadow-sm">
-                  {/* Placeholder for storage chart */}
-                  <div className="flex items-center justify-center h-full">
-                    <div className="text-center text-muted-foreground">
-                      <PieChart className="h-12 w-12 mb-2" />
-                      <p className="text-sm">Storage analytics chart</p>
-                    </div>
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span>Used Storage</span>
+                    <span>{metrics ? `${Math.round(metrics.storage_used_b / 1024 / 1024 / 1024)}GB / ${Math.round(metrics.storage_total_b / 1024 / 1024 / 1024)}GB` : 'Loading...'}</span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-3">
+                    <div
+                      className="bg-primary h-3 rounded-full transition-all duration-300"
+                      style={{ 
+                        width: metrics ? `${(metrics.storage_used_b / metrics.storage_total_b) * 100}%` : '0%' 
+                      }}
+                    />
+                  </div>
+                  <div className="flex justify-between text-xs text-muted-foreground">
+                    <span>Free: {metrics ? `${Math.round((metrics.storage_total_b - metrics.storage_used_b) / 1024 / 1024 / 1024)}GB` : '0GB'}</span>
+                    <span>{metrics ? `${Math.round((metrics.storage_used_b / metrics.storage_total_b) * 100)}%` : '0%'} used</span>
                   </div>
                 </div>
               </CardContent>
@@ -230,17 +331,83 @@ export function AnalyticsView() {
             <Card className="animate-fade-in">
               <CardHeader className="pb-3">
                 <CardTitle className="flex items-center gap-2">
-                  <Network className="h-4 w-4" />
-                  Network Activity
+                  <Server className="h-4 w-4" />
+                  System Information
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="h-64 bg-surface-2 rounded-lg shadow-sm">
-                  {/* Placeholder for network chart */}
-                  <div className="flex items-center justify-center h-full">
-                    <div className="text-center text-muted-foreground">
-                      <Activity className="h-12 w-12 mb-2" />
-                      <p className="text-sm">Network analytics chart</p>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <p className="text-muted-foreground">Hostname</p>
+                    <p className="font-medium">{hostStatus?.hostname || 'Unknown'}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Hypervisor</p>
+                    <p className="font-medium">{hostStatus?.hypervisor_version || 'Unknown'}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Total VMs</p>
+                    <p className="font-medium">{hostStatus?.total_vms || 0}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Running VMs</p>
+                    <p className="font-medium text-green-600">{hostStatus?.running_vms || 0}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">CPU Cores</p>
+                    <p className="font-medium">{metrics?.cpu_cores || 0}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Total Memory</p>
+                    <p className="font-medium">{metrics ? `${Math.round(metrics.total_memory_kb / 1024 / 1024)}GB` : '0GB'}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="animate-fade-in">
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2">
+                  <Activity className="h-4 w-4" />
+                  Resource Overview
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-3">
+                  <div>
+                    <div className="flex justify-between text-sm mb-1">
+                      <span>Memory</span>
+                      <span>{metrics ? `${Math.round(((metrics.total_memory_kb - metrics.free_memory_kb) / metrics.total_memory_kb) * 100)}%` : '0%'}</span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div
+                        className="bg-blue-500 h-2 rounded-full transition-all duration-300"
+                        style={{ width: metrics ? `${((metrics.total_memory_kb - metrics.free_memory_kb) / metrics.total_memory_kb) * 100}%` : '0%' }}
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <div className="flex justify-between text-sm mb-1">
+                      <span>Storage</span>
+                      <span>{metrics ? `${Math.round((metrics.storage_used_b / metrics.storage_total_b) * 100)}%` : '0%'}</span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div
+                        className="bg-green-500 h-2 rounded-full transition-all duration-300"
+                        style={{ width: metrics ? `${(metrics.storage_used_b / metrics.storage_total_b) * 100}%` : '0%' }}
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <div className="flex justify-between text-sm mb-1">
+                      <span>VM Utilization</span>
+                      <span>{hostStatus ? `${Math.round((hostStatus.running_vms / Math.max(hostStatus.total_vms, 1)) * 100)}%` : '0%'}</span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div
+                        className="bg-purple-500 h-2 rounded-full transition-all duration-300"
+                        style={{ width: hostStatus ? `${(hostStatus.running_vms / Math.max(hostStatus.total_vms, 1)) * 100}%` : '0%' }}
+                      />
                     </div>
                   </div>
                 </div>
@@ -287,18 +454,44 @@ export function AnalyticsView() {
           <Card className="animate-fade-in">
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2">
-                <Activity className="h-4 w-4" />
-                CPU Analytics
+                <Cpu className="h-4 w-4" />
+                CPU Information
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="h-80 bg-surface-2 rounded-lg shadow-sm">
-                {/* Placeholder for CPU analytics */}
-                <div className="flex items-center justify-center h-full">
-                  <div className="text-center text-muted-foreground">
-                    <BarChart3 className="h-16 w-16 mb-4" />
-                    <p className="text-lg">CPU Usage Analytics</p>
-                    <p className="text-sm">Detailed CPU performance over time</p>
+            <CardContent className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-4">
+                  <h3 className="font-semibold">CPU Details</h3>
+                  <div className="space-y-2">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Total Cores</span>
+                      <span className="font-medium">{metrics?.cpu_cores || 0}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Architecture</span>
+                      <span className="font-medium">x86_64</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Hypervisor</span>
+                      <span className="font-medium">{hostStatus?.hypervisor_version || 'Unknown'}</span>
+                    </div>
+                  </div>
+                </div>
+                <div className="space-y-4">
+                  <h3 className="font-semibold">VM Distribution</h3>
+                  <div className="space-y-2">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Running VMs</span>
+                      <span className="font-medium text-green-600">{hostStatus?.running_vms || 0}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Total VMs</span>
+                      <span className="font-medium">{hostStatus?.total_vms || 0}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Stopped VMs</span>
+                      <span className="font-medium text-red-600">{hostStatus ? (hostStatus.total_vms - hostStatus.running_vms) : 0}</span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -310,18 +503,64 @@ export function AnalyticsView() {
           <Card className="animate-fade-in">
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2">
-                <TrendingUp className="h-4 w-4" />
+                <MemoryStick className="h-4 w-4" />
                 Memory Analytics
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="h-80 bg-surface-2 rounded-lg shadow-sm">
-                {/* Placeholder for memory analytics */}
-                <div className="flex items-center justify-center h-full">
-                  <div className="text-center text-muted-foreground">
-                    <LineChart className="h-16 w-16 mb-4" />
-                    <p className="text-lg">Memory Usage Analytics</p>
-                    <p className="text-sm">Detailed memory performance over time</p>
+            <CardContent className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-4">
+                  <h3 className="font-semibold">Memory Usage</h3>
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-sm">
+                        <span>Used Memory</span>
+                        <span>{metrics ? `${Math.round((metrics.total_memory_kb - metrics.free_memory_kb) / 1024 / 1024)}GB` : '0GB'}</span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-4">
+                        <div
+                          className="bg-blue-500 h-4 rounded-full transition-all duration-300"
+                          style={{ width: metrics ? `${((metrics.total_memory_kb - metrics.free_memory_kb) / metrics.total_memory_kb) * 100}%` : '0%' }}
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <p className="text-muted-foreground">Total Memory</p>
+                        <p className="font-medium">{metrics ? `${Math.round(metrics.total_memory_kb / 1024 / 1024)}GB` : '0GB'}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Free Memory</p>
+                        <p className="font-medium">{metrics ? `${Math.round(metrics.free_memory_kb / 1024 / 1024)}GB` : '0GB'}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Usage Percentage</p>
+                        <p className="font-medium">{metrics ? `${Math.round(((metrics.total_memory_kb - metrics.free_memory_kb) / metrics.total_memory_kb) * 100)}%` : '0%'}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Available</p>
+                        <p className="font-medium text-green-600">{metrics ? `${Math.round(metrics.free_memory_kb / 1024 / 1024)}GB` : '0GB'}</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div className="space-y-4">
+                  <h3 className="font-semibold">Memory Distribution</h3>
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg">
+                      <div className="flex items-center gap-2">
+                        <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
+                        <span className="text-sm">Used Memory</span>
+                      </div>
+                      <span className="font-medium">{metrics ? `${Math.round(((metrics.total_memory_kb - metrics.free_memory_kb) / metrics.total_memory_kb) * 100)}%` : '0%'}</span>
+                    </div>
+                    <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                      <div className="flex items-center gap-2">
+                        <div className="w-3 h-3 bg-gray-300 rounded-full"></div>
+                        <span className="text-sm">Free Memory</span>
+                      </div>
+                      <span className="font-medium">{metrics ? `${Math.round((metrics.free_memory_kb / metrics.total_memory_kb) * 100)}%` : '0%'}</span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -337,14 +576,60 @@ export function AnalyticsView() {
                 Storage Analytics
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="h-80 bg-surface-2 rounded-lg shadow-sm">
-                {/* Placeholder for storage analytics */}
-                <div className="flex items-center justify-center h-full">
-                  <div className="text-center text-muted-foreground">
-                    <PieChart className="h-16 w-16 mb-4" />
-                    <p className="text-lg">Storage Usage Analytics</p>
-                    <p className="text-sm">Detailed storage performance over time</p>
+            <CardContent className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-4">
+                  <h3 className="font-semibold">Storage Usage</h3>
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-sm">
+                        <span>Used Storage</span>
+                        <span>{metrics ? `${Math.round(metrics.storage_used_b / 1024 / 1024 / 1024)}GB` : '0GB'}</span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-4">
+                        <div
+                          className="bg-green-500 h-4 rounded-full transition-all duration-300"
+                          style={{ width: metrics ? `${(metrics.storage_used_b / metrics.storage_total_b) * 100}%` : '0%' }}
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <p className="text-muted-foreground">Total Storage</p>
+                        <p className="font-medium">{metrics ? `${Math.round(metrics.storage_total_b / 1024 / 1024 / 1024)}GB` : '0GB'}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Free Storage</p>
+                        <p className="font-medium">{metrics ? `${Math.round((metrics.storage_total_b - metrics.storage_used_b) / 1024 / 1024 / 1024)}GB` : '0GB'}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Usage Percentage</p>
+                        <p className="font-medium">{metrics ? `${Math.round((metrics.storage_used_b / metrics.storage_total_b) * 100)}%` : '0%'}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Available</p>
+                        <p className="font-medium text-green-600">{metrics ? `${Math.round((metrics.storage_total_b - metrics.storage_used_b) / 1024 / 1024 / 1024)}GB` : '0GB'}</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div className="space-y-4">
+                  <h3 className="font-semibold">Storage Distribution</h3>
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
+                      <div className="flex items-center gap-2">
+                        <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                        <span className="text-sm">Used Storage</span>
+                      </div>
+                      <span className="font-medium">{metrics ? `${Math.round((metrics.storage_used_b / metrics.storage_total_b) * 100)}%` : '0%'}</span>
+                    </div>
+                    <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                      <div className="flex items-center gap-2">
+                        <div className="w-3 h-3 bg-gray-300 rounded-full"></div>
+                        <span className="text-sm">Free Storage</span>
+                      </div>
+                      <span className="font-medium">{metrics ? `${Math.round(((metrics.storage_total_b - metrics.storage_used_b) / metrics.storage_total_b) * 100)}%` : '0%'}</span>
+                    </div>
                   </div>
                 </div>
               </div>

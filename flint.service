@@ -1,0 +1,31 @@
+[Unit]
+Description=Flint KVM Management Tool
+After=network.target libvirtd.service
+Requires=libvirtd.service
+
+[Service]
+Type=simple
+User=flint
+Group=flint
+ExecStart=/usr/local/bin/flint serve
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+RestartSec=5
+Environment=HOME=/var/lib/flint
+
+# Security settings
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/flint /var/lib/libvirt /var/run/libvirt
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+
+# Resource limits
+LimitNOFILE=65536
+MemoryLimit=1G
+
+[Install]
+WantedBy=multi-user.target

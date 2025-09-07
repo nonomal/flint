@@ -98,12 +98,20 @@ export function VMSerialConsole({ vmUuid }: VMSerialConsoleProps) {
   const connectToSerialConsole = async (vmUuid: string, term: any) => {
     try {
       // Step 1: Get connection details from HTTP endpoint
-      const response = await fetch(`/api/vms/${vmUuid}/serial-console`)
+      const response = await fetch(`/api/vms/${vmUuid}/serial-console`, {
+        credentials: 'include'
+      })
       if (!response.ok) {
-        throw new Error(`Failed to get console details: ${response.status}`)
+        const errorText = await response.text()
+        throw new Error(`Failed to get console details: ${response.status} - ${errorText}`)
       }
 
-      const { websocket_path, token } = await response.json()
+      const responseData = await response.json()
+      const { websocket_path, token } = responseData
+
+      if (!token) {
+        throw new Error("No authentication token received from server")
+      }
 
       // Step 2: Build WebSocket URL
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
@@ -130,7 +138,10 @@ export function VMSerialConsole({ vmUuid }: VMSerialConsoleProps) {
         console.log("Serial console WebSocket closed", event.code, event.reason)
         term.write(`\r\n🚫 Disconnected from serial console\r\n`)
         if (event.code !== 1000) {
-          term.write(`Reason: ${event.reason || 'Unknown'}\r\n`)
+          term.write(`Reason: ${event.reason || 'Connection failed'} (Code: ${event.code})\r\n`)
+          if (event.code === 1006) {
+            term.write(`This usually indicates a server connection issue or authentication failure.\r\n`)
+          }
         }
         setIsConnected(false)
         setIsConnecting(false)

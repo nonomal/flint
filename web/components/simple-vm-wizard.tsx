@@ -1,7 +1,9 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { navigateTo, routes } from "@/lib/navigation"
+import { SPACING, TYPOGRAPHY, TRANSITIONS } from "@/lib/ui-constants"
+import { ConsistentButton } from "@/components/ui/consistent-button"
 import { storageAPI, networkAPI, imageAPI, Image } from "@/lib/api"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -45,7 +47,7 @@ interface SimpleVMConfig {
 }
 
 export function SimpleVMWizard() {
-  const router = useRouter()
+  
   const { toast } = useToast()
   const [isCreating, setIsCreating] = useState(false)
   const [createdVM, setCreatedVM] = useState<{ uuid: string; name: string } | null>(null)
@@ -222,7 +224,7 @@ export function SimpleVMWizard() {
 
   const goToVMDetail = () => {
     if (createdVM) {
-      router.push(`/vms/detail?id=${createdVM.uuid}`)
+      navigateTo(routes.vmDetail(createdVM.uuid))
     }
   }
 
@@ -231,14 +233,14 @@ export function SimpleVMWizard() {
     return (
       <div className="max-w-6xl mx-auto space-y-6 p-6 sm:p-8 lg:p-10">
         <div className="flex items-center gap-4">
-          <Button 
+          <ConsistentButton 
             variant="ghost" 
             size="sm"
-            onClick={() => router.push('/vms')}
+            onClick={() => navigateTo(routes.vms)}
           >
             <ArrowLeft className="mr-2 h-4 w-4" />
             Back to VMs
-          </Button>
+          </ConsistentButton>
           <div>
             <h1 className="text-3xl font-bold tracking-tight text-foreground">VM Created: {createdVM.name}</h1>
             <p className="text-muted-foreground">Watch your VM boot up and get ready for SSH access</p>
@@ -284,14 +286,14 @@ export function SimpleVMWizard() {
                     </div>
 
                     <div className="flex gap-2">
-                      <Button onClick={copySSHCommand} className="flex-1">
+                      <ConsistentButton onClick={copySSHCommand} className="flex-1">
                         <Copy className="mr-2 h-4 w-4" />
                         Copy SSH Command
-                      </Button>
-                      <Button variant="outline" onClick={goToVMDetail}>
+                      </ConsistentButton>
+                      <ConsistentButton variant="outline" onClick={goToVMDetail}>
                         <ExternalLink className="mr-2 h-4 w-4" />
                         VM Details
-                      </Button>
+                      </ConsistentButton>
                     </div>
                   </div>
                 ) : (
@@ -308,10 +310,10 @@ export function SimpleVMWizard() {
                       </p>
                     </div>
 
-                    <Button variant="outline" onClick={goToVMDetail} className="w-full">
+                    <ConsistentButton variant="outline" onClick={goToVMDetail} className="w-full">
                       <ExternalLink className="mr-2 h-4 w-4" />
                       Go to VM Details
-                    </Button>
+                    </ConsistentButton>
                   </div>
                 )}
               </CardContent>
@@ -322,7 +324,7 @@ export function SimpleVMWizard() {
                 <CardTitle>Quick Actions</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
-                <Button 
+                <ConsistentButton 
                   variant="outline" 
                   className="w-full justify-start"
                   onClick={() => {
@@ -334,15 +336,15 @@ export function SimpleVMWizard() {
                 >
                   <Plus className="mr-2 h-4 w-4" />
                   Create Another VM
-                </Button>
-                <Button 
+                </ConsistentButton>
+                <ConsistentButton 
                   variant="outline" 
                   className="w-full justify-start"
-                  onClick={() => router.push('/vms')}
+                  onClick={() => navigateTo(routes.vms)}
                 >
                   <ArrowLeft className="mr-2 h-4 w-4" />
                   View All VMs
-                </Button>
+                </ConsistentButton>
               </CardContent>
             </Card>
           </div>
@@ -355,14 +357,14 @@ export function SimpleVMWizard() {
     <div className="max-w-4xl mx-auto space-y-6 p-6 sm:p-8 lg:p-10">
       {/* Header */}
       <div className="flex items-center gap-4">
-        <Button 
+        <ConsistentButton 
           variant="ghost" 
           size="sm"
-          onClick={() => router.push('/vms')}
+          onClick={() => navigateTo(routes.vms)}
         >
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back to VMs
-        </Button>
+        </ConsistentButton>
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-foreground">Create Virtual Machine</h1>
           <p className="text-muted-foreground">Quick setup for your new VM</p>
@@ -458,9 +460,9 @@ export function SimpleVMWizard() {
                     ) : (
                       <div className="text-center py-4 text-muted-foreground text-sm">
                         No cloud images available. 
-                        <Button variant="link" className="p-0 h-auto ml-1" onClick={() => router.push('/images')}>
+                        <ConsistentButton variant="link" className="p-0 h-auto ml-1" onClick={() => navigateTo(routes.images)}>
                           Upload images here
-                        </Button>
+                        </ConsistentButton>
                       </div>
                     )}
                   </div>
@@ -723,7 +725,7 @@ export function SimpleVMWizard() {
             </CardContent>
           </Card>
 
-          <Button 
+          <ConsistentButton 
             className="w-full bg-primary text-primary-foreground hover:bg-primary/90 hover-fast shadow-md hover:shadow-lg"
             onClick={handleCreate}
             disabled={isCreating || !config.name.trim() || !config.selectedSource}
@@ -739,7 +741,7 @@ export function SimpleVMWizard() {
                 Create & Start VM
               </>
             )}
-          </Button>
+          </ConsistentButton>
         </div>
       </div>
     </div>

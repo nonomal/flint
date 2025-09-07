@@ -321,10 +321,215 @@ var vmConsoleCmd = &cobra.Command{
 	},
 }
 
+var vmDeleteCmd = &cobra.Command{
+	Use:   "delete [name]",
+	Short: "Delete a virtual machine",
+	Long:  "Delete a virtual machine and optionally its storage",
+	Args:  cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		name := args[0]
+		force, _ := cmd.Flags().GetBool("force")
+		deleteStorage, _ := cmd.Flags().GetBool("delete-storage")
+
+		client, err := libvirtclient.NewClient("qemu:///system", "isos", "templates")
+		if err != nil {
+			log.Fatalf("Failed to connect: %v", err)
+		}
+		defer client.Close()
+
+		if !force {
+			fmt.Printf("Are you sure you want to delete VM '%s'? (y/N): ", name)
+			var response string
+			fmt.Scanln(&response)
+			if response != "y" && response != "Y" {
+				fmt.Println("Cancelled")
+				return
+			}
+		}
+
+		err = client.DeleteVM(name, deleteStorage)
+		if err != nil {
+			log.Fatalf("Failed to delete VM: %v", err)
+		}
+
+		fmt.Printf("VM '%s' deleted successfully\n", name)
+	},
+}
+
+var vmStartCmd = &cobra.Command{
+	Use:   "start [name]",
+	Short: "Start a virtual machine",
+	Args:  cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		name := args[0]
+
+		client, err := libvirtclient.NewClient("qemu:///system", "isos", "templates")
+		if err != nil {
+			log.Fatalf("Failed to connect: %v", err)
+		}
+		defer client.Close()
+
+		err = client.StartVM(name)
+		if err != nil {
+			log.Fatalf("Failed to start VM: %v", err)
+		}
+
+		fmt.Printf("VM '%s' started successfully\n", name)
+	},
+}
+
+var vmStopCmd = &cobra.Command{
+	Use:   "stop [name]",
+	Short: "Stop a virtual machine",
+	Args:  cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		name := args[0]
+		force, _ := cmd.Flags().GetBool("force")
+
+		client, err := libvirtclient.NewClient("qemu:///system", "isos", "templates")
+		if err != nil {
+			log.Fatalf("Failed to connect: %v", err)
+		}
+		defer client.Close()
+
+		if force {
+			err = client.ForceStopVM(name)
+		} else {
+			err = client.StopVM(name)
+		}
+		if err != nil {
+			log.Fatalf("Failed to stop VM: %v", err)
+		}
+
+		action := "stopped"
+		if force {
+			action = "force stopped"
+		}
+		fmt.Printf("VM '%s' %s successfully\n", name, action)
+	},
+}
+
+var vmRestartCmd = &cobra.Command{
+	Use:   "restart [name]",
+	Short: "Restart a virtual machine",
+	Args:  cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		name := args[0]
+		force, _ := cmd.Flags().GetBool("force")
+
+		client, err := libvirtclient.NewClient("qemu:///system", "isos", "templates")
+		if err != nil {
+			log.Fatalf("Failed to connect: %v", err)
+		}
+		defer client.Close()
+
+		err = client.RestartVM(name, force)
+		if err != nil {
+			log.Fatalf("Failed to restart VM: %v", err)
+		}
+
+		fmt.Printf("VM '%s' restarted successfully\n", name)
+	},
+}
+
+var vmDetailsCmd = &cobra.Command{
+	Use:   "details [name]",
+	Short: "Show detailed information about a VM",
+	Args:  cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		name := args[0]
+
+		client, err := libvirtclient.NewClient("qemu:///system", "isos", "templates")
+		if err != nil {
+			log.Fatalf("Failed to connect: %v", err)
+		}
+		defer client.Close()
+
+		vm, err := client.GetVMDetails(name)
+		if err != nil {
+			log.Fatalf("Failed to get VM details: %v", err)
+		}
+
+		fmt.Printf("\n=== VM Details: %s ===\n", vm.Name)
+		fmt.Printf("UUID: %s\n", vm.UUID)
+		fmt.Printf("State: %s\n", vm.State)
+		fmt.Printf("Memory: %d MB\n", vm.MemoryKB/1024)
+		fmt.Printf("vCPUs: %d\n", vm.VCPUs)
+		fmt.Printf("OS: %s\n", vm.OS)
+		
+		if len(vm.IPAddresses) > 0 {
+			fmt.Printf("IP Addresses: %s\n", strings.Join(vm.IPAddresses, ", "))
+		}
+		
+		if vm.UptimeSec > 0 {
+			fmt.Printf("Uptime: %s\n", libvirtclient.FormatUptime(vm.UptimeSec))
+		}
+		
+		fmt.Printf("CPU Usage: %.1f%%\n", vm.CPUPercent)
+		
+		if len(vm.Disks) > 0 {
+			fmt.Println("\nDisks:")
+			for _, disk := range vm.Disks {
+				fmt.Printf("  - %s: %s (%s)\n", disk.TargetDev, disk.SourcePath, disk.Device)
+			}
+		}
+		
+		if len(vm.Nics) > 0 {
+			fmt.Println("\nNetworks:")
+			for _, nic := range vm.Nics {
+				fmt.Printf("  - %s: %s (%s)\n", nic.MAC, nic.Source, nic.Model)
+			}
+		}
+		fmt.Println()
+	},
+}
+
+var vmGuestAgentCmd = &cobra.Command{
+	Use:   "guest-agent",
+	Short: "Manage guest agent",
+	Long:  "Commands to interact with the QEMU guest agent",
+}
+
+var vmGuestAgentStatusCmd = &cobra.Command{
+	Use:   "status [name]",
+	Short: "Check guest agent status",
+	Args:  cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		name := args[0]
+
+		client, err := libvirtclient.NewClient("qemu:///system", "isos", "templates")
+		if err != nil {
+			log.Fatalf("Failed to connect: %v", err)
+		}
+		defer client.Close()
+
+		status, err := client.GetGuestAgentStatus(name)
+		if err != nil {
+			log.Fatalf("Failed to get guest agent status: %v", err)
+		}
+
+		fmt.Printf("Guest Agent Status for VM '%s': %s\n", name, status)
+	},
+}
+
 func init() {
-	rootCmd.AddCommand(vmCmd)
 	vmCmd.AddCommand(vmListCmd)
 	vmCmd.AddCommand(vmLaunchCmd)
 	vmCmd.AddCommand(vmSSHCmd)
 	vmCmd.AddCommand(vmConsoleCmd)
+	vmCmd.AddCommand(vmDeleteCmd)
+	vmCmd.AddCommand(vmStartCmd)
+	vmCmd.AddCommand(vmStopCmd)
+	vmCmd.AddCommand(vmRestartCmd)
+	vmCmd.AddCommand(vmDetailsCmd)
+	vmCmd.AddCommand(vmGuestAgentCmd)
+
+	// Add guest agent subcommands
+	vmGuestAgentCmd.AddCommand(vmGuestAgentStatusCmd)
+
+	// Add flags
+	vmDeleteCmd.Flags().Bool("force", false, "Skip confirmation prompt")
+	vmDeleteCmd.Flags().Bool("delete-storage", false, "Also delete VM storage")
+	vmStopCmd.Flags().Bool("force", false, "Force stop (equivalent to power off)")
+	vmRestartCmd.Flags().Bool("force", false, "Force restart")
 }

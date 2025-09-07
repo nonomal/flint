@@ -98,6 +98,7 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ||
     ? `http://${window.location.hostname}:5550/api`
     : "http://localhost:5550/api")
 
+let apiKey: string | null = null
 
 class APIError extends Error {
   constructor(
@@ -109,27 +110,71 @@ class APIError extends Error {
   }
 }
 
+// Get API key from environment or server (now requires authentication)
+async function getAPIKey(): Promise<string> {
+  if (apiKey) return apiKey
+
+  // First try environment variable
+  const envKey = process.env.NEXT_PUBLIC_FLINT_API_KEY || process.env.FLINT_API_KEY
+  if (envKey) {
+    apiKey = envKey
+    return apiKey
+  }
+
+  // For browser usage, we don't need the API key since we use session cookies
+  // Only CLI usage needs to fetch the API key
+  const isBrowser = typeof window !== 'undefined'
+  if (isBrowser) {
+    // Browser should use session authentication, not API key
+    throw new Error("API key not available in browser environment")
+  }
+
+  // Fallback to server endpoint for CLI usage (now requires authentication)
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/api-key`, {
+      credentials: 'include' // Include session cookies
+    })
+    if (!response.ok) {
+      throw new Error(`Failed to get API key: ${response.status}`)
+    }
+    const data = await response.text()
+    apiKey = data.trim()
+    return apiKey
+  } catch (error) {
+    console.error("Failed to get API key:", error)
+    throw error
+  }
+}
+
 async function apiRequest<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const url = `${API_BASE_URL}${endpoint}`
 
+  // For web app (browser), use session cookies for authentication
+  // For CLI/API usage, use API key
+  const isBrowser = typeof window !== 'undefined'
+
+  let headers = {
+    ...options.headers,
+    'Content-Type': 'application/json',
+  }
+
+  if (!isBrowser) {
+    // CLI/API usage - use API key
+    const apiKey = await getAPIKey()
+    headers['Authorization'] = `Bearer ${apiKey}`
+  }
+  // Browser usage - rely on session cookies from passphrase authentication
+
   const response = await fetch(url, {
-    headers: {
-      "Content-Type": "application/json",
-      ...options.headers,
-    },
     ...options,
+    headers,
+    credentials: 'include', // Include session cookies for browser requests
+    mode: 'cors', // Ensure CORS is handled properly
   })
 
   if (!response.ok) {
-    let errorMessage = `HTTP ${response.status}`
-    try {
-      const errorData = await response.json()
-      errorMessage = errorData.error || errorMessage
-    } catch {
-      // If we can't parse the error response, use the status text
-      errorMessage = response.statusText || errorMessage
-    }
-    throw new APIError(response.status, errorMessage)
+    const errorText = await response.text()
+    throw new APIError(response.status, `API request failed: ${response.status} ${errorText}`)
   }
 
   // Handle 204 No Content responses
@@ -137,7 +182,19 @@ async function apiRequest<T>(endpoint: string, options: RequestInit = {}): Promi
     return {} as T
   }
 
-  return response.json()
+  // Handle empty responses
+  const contentType = response.headers.get('content-type')
+  if (contentType && contentType.includes('application/json')) {
+    return response.json()
+  } else {
+    // Try to parse as JSON first, fallback to text
+    const text = await response.text()
+    try {
+      return JSON.parse(text)
+    } catch {
+      return text as any
+    }
+  }
 }
 
 // Host API functions
@@ -165,6 +222,10 @@ export const vmAPI = {
     const url = deleteDisks ? `/vms/${uuid}?deleteDisks=true` : `/vms/${uuid}`
     return apiRequest(url, { method: "DELETE" })
   },
+  getGuestAgentStatus: (uuid: string): Promise<{ available: boolean; vm_uuid: string }> =>
+    apiRequest(`/vms/${uuid}/guest-agent/status`),
+  installGuestAgent: (uuid: string): Promise<{ status: string; message: string }> =>
+    apiRequest(`/vms/${uuid}/guest-agent/install`, { method: "POST" }),
 }
 
 // Storage API functions
@@ -181,17 +242,20 @@ export const storageAPI = {
 // Network API types
 export interface VirtualNetwork {
   name: string
-  type: string
-  state: string
+  uuid: string
   bridge: string
-  ipRange: string
-  dhcp: {
+  is_active: boolean
+  is_persistent: boolean
+  type?: string
+  state?: string
+  ipRange?: string
+  dhcp?: {
     enabled: boolean
     start?: string
     end?: string
   }
-  connectedVMs: number
-  autostart: boolean
+  connectedVMs?: number
+  autostart?: boolean
 }
 
 export interface NetworkInterface {

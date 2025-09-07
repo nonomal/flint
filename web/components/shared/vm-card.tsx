@@ -46,21 +46,21 @@ export function VMCard({ vm, onAction }: VMCardProps) {
         return (
           <Badge variant="default" className={cn(baseClasses, "bg-primary text-primary-foreground border-primary/20 hover:bg-primary/90 transition-colors duration-150 animate-fade-scale")}>
             <Activity className="h-3 w-3" />
-            <span className="hidden sm:inline">Running</span>
+            <span>Running</span>
           </Badge>
         )
       case "paused":
         return (
           <Badge variant="secondary" className={cn(baseClasses, "bg-accent text-accent-foreground border-accent/20 hover:bg-accent/90 transition-colors duration-150 animate-fade-scale")}>
             <Clock className="h-3 w-3" />
-            <span className="hidden sm:inline">Paused</span>
+            <span>Paused</span>
           </Badge>
         )
       default: // stopped
         return (
           <Badge variant="secondary" className={cn(baseClasses, "bg-muted text-muted-foreground border-border/50 hover:bg-muted/80 transition-colors duration-150 animate-fade-scale")}>
             <Square className="h-3 w-3" />
-            <span className="hidden sm:inline">Stopped</span>
+            <span>Stopped</span>
           </Badge>
         )
     }
@@ -148,11 +148,13 @@ export function VMCard({ vm, onAction }: VMCardProps) {
       vm.status === "running" ? "border-primary/20 bg-surface-1" : vm.status === "paused" ? "border-accent/20 bg-surface-1" : "border-muted/30 bg-surface-3"
     )}>
       <CardHeader className="pb-3 px-4 sm:px-6 pt-4">
-        <div className="flex items-start justify-between gap-3">
-          <CardTitle className="text-base sm:text-lg font-display font-semibold truncate pr-2 group-hover:text-primary transition-colors duration-200">
+        <div className="flex items-start justify-between gap-3 min-w-0">
+          <CardTitle className="text-base sm:text-lg font-display font-semibold truncate flex-1 min-w-0 group-hover:text-primary transition-colors duration-200">
             {vm.name}
           </CardTitle>
-          {getStatusBadge()}
+          <div className="flex-shrink-0">
+            {getStatusBadge()}
+          </div>
         </div>
         <div className="text-xs text-muted-foreground space-y-0.5 mt-1">
           <div className="truncate font-mono">{vm.os}</div>

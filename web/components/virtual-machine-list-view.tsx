@@ -1,20 +1,13 @@
 "use client"
 
 import React, { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { navigateTo, routes } from "@/lib/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { VMSummary, vmAPI } from "@/lib/api"
 import { useToast } from "@/components/ui/use-toast"
@@ -22,7 +15,6 @@ import {
   Plus,
   Search,
   Filter,
-  MoreHorizontal,
   Play,
   Square,
   RotateCcw,
@@ -35,9 +27,11 @@ import {
   Loader2,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { SPACING, TYPOGRAPHY, GRIDS, TRANSITIONS, COLORS } from "@/lib/ui-constants"
+import { ConsistentButton } from "@/components/ui/consistent-button"
+import { ErrorState } from "@/components/ui/error-state"
 
 export function VirtualMachineListView() {
-  const router = useRouter()
   const { toast } = useToast()
   const [selectedVMs, setSelectedVMs] = useState<string[]>([])
   const [searchQuery, setSearchQuery] = useState("")
@@ -172,15 +166,25 @@ export function VirtualMachineListView() {
         throw new Error(errorData.error || `Failed to ${action} VM (HTTP ${response.status})`);
       }
 
-      // Refresh the VM list
-      const updatedVMs = await vmAPI.getAll()
-      setVirtualMachines(updatedVMs)
-      
-      // Show success message
+      // Show success message first
       toast({
         title: "Success",
-        description: `VM ${action}ed successfully`,
+        description: `VM ${action} action completed successfully`,
       })
+
+      // Wait a moment for the backend state to update, then refresh
+      setTimeout(async () => {
+        try {
+          const updatedVMs = await vmAPI.getAll()
+          setVirtualMachines(updatedVMs)
+        } catch (err) {
+          console.error("Failed to refresh VM list:", err)
+        }
+      }, 1000)
+      
+      // Also refresh immediately in case the state is already updated
+      const immediateVMs = await vmAPI.getAll()
+      setVirtualMachines(immediateVMs)
     } catch (err) {
       toast({
         title: "Error",
@@ -222,7 +226,7 @@ export function VirtualMachineListView() {
   }
 
   const handleCreateVM = () => {
-    router.push("/vms/create")
+    navigateTo(routes.vmCreate)
   }
 
   const sortedVMs = [...filteredVMs].sort((a, b) => {
@@ -272,17 +276,17 @@ export function VirtualMachineListView() {
 
   if (error) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-center">
-          <h2 className="text-xl font-semibold mb-2 text-foreground">Error Loading VMs</h2>
-          <p className="text-muted-foreground">{error}</p>
-        </div>
+      <div className={`${SPACING.section} ${SPACING.page}`}>
+        <ErrorState 
+          title="Error Loading VMs"
+          description={error}
+        />
       </div>
     )
   }
 
   return (
-    <div className="space-y-8">
+    <div className={SPACING.section}>
       {/* Page Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -292,20 +296,20 @@ export function VirtualMachineListView() {
         <div className="flex gap-2">
           {selectedVMs.length > 0 && (
             <div className="flex gap-2">
-              <Button variant="outline" size="sm" className="hover-fast shadow-sm">
-                <Play className="mr-2 h-4 w-4" />
+              <ConsistentButton variant="outline" size="sm" className="hover-fast shadow-sm">
+                <Play className="h-4 w-4" />
                 Start ({selectedVMs.length})
-              </Button>
-              <Button variant="outline" size="sm" className="hover-fast shadow-sm">
-                <Square className="mr-2 h-4 w-4" />
+              </ConsistentButton>
+              <ConsistentButton variant="outline" size="sm" className="hover-fast shadow-sm">
+                <Square className="h-4 w-4" />
                 Stop ({selectedVMs.length})
-              </Button>
+              </ConsistentButton>
             </div>
           )}
-          <Button className="bg-primary text-primary-foreground hover:bg-primary/90 hover-fast shadow-md hover:shadow-lg" onClick={handleCreateVM}>
-            <Plus className="mr-2 h-4 w-4" />
+          <ConsistentButton className="bg-primary text-primary-foreground hover:bg-primary/90 hover-fast shadow-md hover:shadow-lg" onClick={handleCreateVM}>
+            <Plus className="h-4 w-4" />
             Create VM
-          </Button>
+          </ConsistentButton>
         </div>
       </div>
 
@@ -350,14 +354,14 @@ export function VirtualMachineListView() {
                   <SelectItem value="memory">Sort by Memory</SelectItem>
                 </SelectContent>
               </Select>
-              <Button 
+              <ConsistentButton 
                 variant="outline" 
                 size="sm"
                 className="border-border/50 bg-surface-2 hover:bg-accent/10 transition-all duration-200"
                 onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
               >
                 {sortOrder === "asc" ? "↑" : "↓"}
-              </Button>
+              </ConsistentButton>
             </div>
           </div>
         </CardContent>
@@ -398,7 +402,7 @@ export function VirtualMachineListView() {
                 <TableRow 
                   key={vm.uuid} 
                   className="cursor-pointer hover:bg-surface-2 transition-all duration-150 border-b border-border/50 last:border-b-0"
-                  onClick={() => router.push(`/vms/detail?id=${vm.uuid}`)}
+                  onClick={() => navigateTo(routes.vmDetail(vm.uuid))}
                 >
                   <TableCell className="pl-4" onClick={(e) => e.stopPropagation()}>
                     <Checkbox
@@ -410,7 +414,7 @@ export function VirtualMachineListView() {
                   <TableCell className="px-4">
                     <div className="font-semibold text-foreground">{vm.name}</div>
                     <div className="text-xs text-muted-foreground">
-                      CPU: {vm.cpu_percent.toFixed(1)}% • RAM: {formatMemory(vm.memory_kb)}
+                      CPU: {vm.cpu_percent ? vm.cpu_percent.toFixed(1) : 0}% • RAM: {formatMemory(vm.memory_kb)}
                     </div>
                   </TableCell>
                   <TableCell className="px-4 font-semibold">{vm.vcpus}</TableCell>
@@ -421,47 +425,15 @@ export function VirtualMachineListView() {
                   <TableCell className="px-4">{formatUptime(vm.uptime_sec)}</TableCell>
                   <TableCell className="px-4">{vm.os_info || "Unknown"}</TableCell>
                   <TableCell className="pr-4" onClick={(e) => e.stopPropagation()}>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="sm" className="h-8 w-8 p-0 hover-fast focus-clean">
-                          <MoreHorizontal className="h-4 w-4" />
-                          <span className="sr-only">Open menu</span>
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="bg-surface-2 border-border/50 shadow-lg w-48">
-                        <DropdownMenuItem onClick={() => router.push(`/vms/detail?id=${vm.uuid}`)} className="hover-fast">
-                          <Eye className="mr-2 h-4 w-4" />
-                          View Details
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => window.open(`/vms/console?id=${vm.uuid}`, '_blank')} className="hover-fast">
-                          <Monitor className="mr-2 h-4 w-4" />
-                          Open Console
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        {vm.state === "Running" ? (
-                          <>
-                            <DropdownMenuItem onClick={() => handleVMAction(vm.uuid, "stop")} className="hover-fast">
-                              <Square className="mr-2 h-4 w-4" />
-                              Stop
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => handleVMAction(vm.uuid, "reboot")} className="hover-fast">
-                              <RotateCcw className="mr-2 h-4 w-4" />
-                              Reboot
-                            </DropdownMenuItem>
-                          </>
-                        ) : (
-                          <DropdownMenuItem onClick={() => handleVMAction(vm.uuid, "start")} className="hover-fast">
-                            <Play className="mr-2 h-4 w-4" />
-                            Start
-                          </DropdownMenuItem>
-                        )}
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem className="text-destructive focus:text-destructive hover:bg-destructive/5 hover-fast" onClick={() => handleDeleteVM(vm.uuid)}>
-                          <Trash2 className="mr-2 h-4 w-4" />
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                    <ConsistentButton 
+                      variant="ghost" 
+                      size="sm" 
+                      className="h-8 px-3 hover:bg-accent focus:bg-accent"
+                      onClick={() => navigateTo(routes.vmDetail(vm.uuid))}
+                    >
+                      <Eye className="mr-1 h-3 w-3" />
+                      <span className="text-xs">Details</span>
+                    </ConsistentButton>
                   </TableCell>
                 </TableRow>
               ))}

@@ -41,10 +41,22 @@ Examples:
 		}
 		defer client.Close()
 
-		// Find VM
-		vm, err := findVMByIdentifier(client, vmIdentifier)
+		// Find VM by name
+		vms, err := client.GetVMSummaries()
 		if err != nil {
-			log.Fatalf("Failed to find VM: %v", err)
+			log.Fatalf("Failed to get VMs: %v", err)
+		}
+		
+		var vm *core.VM_Summary
+		for _, v := range vms {
+			if v.Name == vmIdentifier || v.UUID == vmIdentifier {
+				vm = &v
+				break
+			}
+		}
+		
+		if vm == nil {
+			log.Fatalf("VM '%s' not found", vmIdentifier)
 		}
 
 		// Create snapshot
@@ -80,10 +92,22 @@ var listSnapshotsCmd = &cobra.Command{
 		}
 		defer client.Close()
 
-		// Find VM
-		vm, err := findVMByIdentifier(client, vmIdentifier)
+		// Find VM by name
+		vms, err := client.GetVMSummaries()
 		if err != nil {
-			log.Fatalf("Failed to find VM: %v", err)
+			log.Fatalf("Failed to get VMs: %v", err)
+		}
+		
+		var vm *core.VM_Summary
+		for _, v := range vms {
+			if v.Name == vmIdentifier || v.UUID == vmIdentifier {
+				vm = &v
+				break
+			}
+		}
+		
+		if vm == nil {
+			log.Fatalf("VM '%s' not found", vmIdentifier)
 		}
 
 		// Get snapshots
@@ -128,10 +152,22 @@ var revertSnapshotCmd = &cobra.Command{
 		}
 		defer client.Close()
 
-		// Find VM
-		vm, err := findVMByIdentifier(client, vmIdentifier)
+		// Find VM by name
+		vms, err := client.GetVMSummaries()
 		if err != nil {
-			log.Fatalf("Failed to find VM: %v", err)
+			log.Fatalf("Failed to get VMs: %v", err)
+		}
+		
+		var vm *core.VM_Summary
+		for _, v := range vms {
+			if v.Name == vmIdentifier || v.UUID == vmIdentifier {
+				vm = &v
+				break
+			}
+		}
+		
+		if vm == nil {
+			log.Fatalf("VM '%s' not found", vmIdentifier)
 		}
 
 		fmt.Printf("⏪ Reverting VM '%s' to snapshot '%s'...\n", vm.Name, snapshotName)

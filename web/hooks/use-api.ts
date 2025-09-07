@@ -46,45 +46,111 @@ export function useVolumes(poolName: string | null) {
   })
 }
 
+// Helper function to get optimistic VM state based on action
+function getOptimisticVMState(currentVM: any, action: string) {
+  if (!currentVM) return currentVM
+
+  switch (action) {
+    case 'start':
+      return { ...currentVM, state: 'running' }
+    case 'stop':
+    case 'shutdown':
+      return { ...currentVM, state: 'shut off' }
+    case 'restart':
+    case 'reset':
+      // For restart, briefly show as running during the transition
+      return { ...currentVM, state: 'running' }
+    case 'pause':
+      return { ...currentVM, state: 'paused' }
+    case 'resume':
+      return { ...currentVM, state: 'running' }
+    default:
+      return currentVM
+  }
+}
+
 // Utility hook for mutations with optimistic updates
 export function useApiMutation() {
   const { mutate } = useSWR(null) // Get the global mutate function
 
   const performVMAction = async (uuid: string, action: string) => {
-    try {
-      // Skip optimistic update for now - SWR version compatibility issue
+    // Get current data for optimistic updates
+    const currentVM = await mutate(`vm-${uuid}`)
+    const currentVMs = await mutate("vms")
 
-      // Perform the actual API call
+    // Calculate optimistic state
+    const optimisticVM = currentVM ? getOptimisticVMState(currentVM, action) : currentVM
+    const optimisticVMs = currentVMs ? currentVMs.map((vm: any) =>
+      vm.uuid === uuid ? getOptimisticVMState(vm, action) : vm
+    ) : currentVMs
+
+    try {
+      // Apply optimistic update first
+      if (optimisticVM) {
+        await mutate(`vm-${uuid}`, optimisticVM)
+      }
+
+      // Perform the API call
       const result = await vmAPI.performAction(uuid, { action: action as any })
 
-      // Revalidate the data
+      // Also update the VM list optimistically
+      if (optimisticVMs) {
+        await mutate("vms", optimisticVMs)
+      }
+
+      // Revalidate both after successful API call
       await mutate(`vm-${uuid}`)
       await mutate("vms")
 
       return result
     } catch (error) {
-      // Revert optimistic update on error
-      await mutate(`vm-${uuid}`)
+      // Revert optimistic updates on error
+      if (currentVM) {
+        await mutate(`vm-${uuid}`, currentVM)
+      }
+      if (currentVMs) {
+        await mutate("vms", currentVMs)
+      }
       throw error
     }
   }
 
   const deleteVM = async (uuid: string, deleteDisks = false) => {
+    // Get current data for optimistic updates
+    const currentVMs = await mutate("vms")
+
     try {
+      // Optimistically remove VM from list
+      if (currentVMs) {
+        const optimisticVMs = currentVMs.filter((vm: any) => vm.uuid !== uuid)
+        await mutate("vms", optimisticVMs)
+      }
+
+      // Clear individual VM cache
+      await mutate(`vm-${uuid}`, null)
+
+      // Perform the actual API call
       await vmAPI.delete(uuid, deleteDisks)
-      // Remove from cache and revalidate
+
+      // Revalidate to ensure consistency
       await mutate("vms")
-      await mutate(`vm-${uuid}`)
     } catch (error) {
+      // Revert optimistic updates on error
+      if (currentVMs) {
+        await mutate("vms", currentVMs)
+      }
       throw error
     }
   }
 
   const createVM = async (config: any) => {
     try {
+      // Perform the API call first (since we don't know the new VM details)
       const result = await vmAPI.create(config)
-      // Revalidate VM list
+
+      // Revalidate VM list to get the new VM
       await mutate("vms")
+
       return result
     } catch (error) {
       throw error

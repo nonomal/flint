@@ -1,21 +1,10 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useRouter, useSearchParams } from "next/navigation"
+import { navigateTo, routes, getUrlParams } from "@/lib/navigation"
 import { useToast } from "@/hooks/use-toast"
 import dynamic from "next/dynamic"
 
-// Lazy load the performance tab to reduce initial bundle size
-const VMPerformanceTab = dynamic(() => import("@/components/vm-performance-tab").then(mod => ({ default: mod.VMPerformanceTab })), {
-  loading: () => (
-    <div className="flex items-center justify-center h-64">
-      <div className="flex items-center gap-2">
-        <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-        <span>Loading performance data...</span>
-      </div>
-    </div>
-  )
-})
 
 // Lazy load the serial console component to reduce initial bundle size
 const VMSerialConsole = dynamic(() => import("@/components/vm-serial-console").then(mod => ({ default: mod.VMSerialConsole })), {
@@ -85,14 +74,15 @@ const formatUptime = (seconds: number) => {
 };
 
 export function VMDetailView() {
-  const router = useRouter()
-  const searchParams = useSearchParams()
+  const searchParams = getUrlParams()
   const { toast } = useToast()
   const [activeTab, setActiveTab] = useState("overview")
   const [vmData, setVmData] = useState<VMDetailed | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [snapshots, setSnapshots] = useState<any[]>([])
+  const [guestAgentStatus, setGuestAgentStatus] = useState<{ available: boolean; vm_uuid: string } | null>(null)
+  const [isInstallingAgent, setIsInstallingAgent] = useState(false)
   const [isPerformingAction, setIsPerformingAction] = useState(false)
   const [isCreateSnapshotOpen, setIsCreateSnapshotOpen] = useState(false)
   const [snapshotName, setSnapshotName] = useState("")
@@ -119,8 +109,12 @@ export function VMDetailView() {
 
       try {
         setIsLoading(true)
-        const data = await vmAPI.getById(vmId)
+        const [data, agentStatus] = await Promise.all([
+          vmAPI.getById(vmId),
+          vmAPI.getGuestAgentStatus(vmId).catch(() => ({ available: false, vm_uuid: vmId }))
+        ])
         setVmData(data)
+        setGuestAgentStatus(agentStatus)
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load VM data")
       } finally {
@@ -129,7 +123,7 @@ export function VMDetailView() {
     }
 
     fetchVMData()
-  }, [searchParams])
+  }, [])
 
   useEffect(() => {
     if (vmData?.uuid) {
@@ -379,7 +373,7 @@ export function VMDetailView() {
 
   if (isLoading) {
     return (
-      <div className="space-y-8 p-6 sm:p-8 md:p-10 lg:p-12">
+      <div className="${SPACING.section} ${SPACING.page}">
         {/* Header skeleton */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
@@ -429,7 +423,7 @@ export function VMDetailView() {
           <Button
             variant="outline"
             className="mt-4"
-            onClick={() => router.push('/vms')}
+            onClick={() => navigateTo(routes.vms)}
           >
             <ArrowLeft className="mr-2 h-4 w-4" />
             Back to VMs
@@ -513,24 +507,24 @@ export function VMDetailView() {
   }
 
   return (
-    <div className="space-y-8 p-6 sm:p-8 md:p-10 lg:p-12">
+    <div className="${SPACING.section} ${SPACING.page}">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => router.push('/vms')}
+            onClick={() => navigateTo(routes.vms)}
           >
             <ArrowLeft className="mr-2 h-4 w-4" />
             Back to VMs
           </Button>
           <div>
             <div className="flex items-center gap-3">
-              <h1 className="text-3xl font-bold tracking-tight text-foreground">{vmData.name}</h1>
+              <h1 className="text-2xl font-bold tracking-tight text-foreground">{vmData.name}</h1>
               {getStatusBadge(vmData.state)}
             </div>
-            <p className="text-muted-foreground mt-1">UUID: {vmData.uuid}</p>
+            <p className="text-sm text-muted-foreground mt-1">UUID: {vmData.uuid}</p>
           </div>
         </div>
 
@@ -590,7 +584,7 @@ export function VMDetailView() {
               fetch(`/api/vms/${vmData.uuid}/serial-console`)
                 .then(response => {
                   if (response.ok) {
-                    router.push(`/vms/console?id=${vmData.uuid}`)
+                    navigateTo(routes.vmConsole(vmData.uuid))
                   } else {
                     toast({
                       title: "Console Not Available",
@@ -646,7 +640,7 @@ export function VMDetailView() {
                   })
 
                   // Redirect to VM list
-                  router.push('/vms')
+                  navigateTo(routes.vms)
                 } catch (error) {
                   console.error('Failed to delete VM:', error)
                   toast({
@@ -666,9 +660,8 @@ export function VMDetailView() {
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-6 mt-2">
+        <TabsList className="grid w-full grid-cols-5 mt-2">
           <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="performance">Performance</TabsTrigger>
           <TabsTrigger value="storage">Storage</TabsTrigger>
           <TabsTrigger value="networking">Networking</TabsTrigger>
           <TabsTrigger value="console">Console</TabsTrigger>
@@ -680,11 +673,8 @@ export function VMDetailView() {
             {/* Configuration */}
             <Card>
               <CardHeader className="pb-3">
-                <CardTitle className="flex items-center justify-between">
+                <CardTitle>
                   Configuration
-                  <Button variant="ghost" size="sm">
-                    <Edit className="h-4 w-4" />
-                  </Button>
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4 pb-4">
@@ -703,7 +693,7 @@ export function VMDetailView() {
                    </div>
                    <div>
                      <p className="text-sm font-medium text-muted-foreground">State</p>
-                     <p className="text-lg font-semibold">{vmData.state}</p>
+                     <div className="mt-1">{getStatusBadge(vmData.state)}</div>
                    </div>
                  </div>
                 <Separator />
@@ -714,7 +704,7 @@ export function VMDetailView() {
                    </div>
                    <div className="flex justify-between text-sm">
                      <span className="text-muted-foreground">CPU Usage</span>
-                     <span>{vmData.cpu_percent.toFixed(1)}%</span>
+                     <span>{vmData.cpu_percent ? vmData.cpu_percent.toFixed(1) : 0}%</span>
                    </div>
                  </div>
               </CardContent>
@@ -729,7 +719,7 @@ export function VMDetailView() {
                  <div className="space-y-2">
                    <div className="flex justify-between text-sm">
                      <span className="text-muted-foreground">CPU Usage</span>
-                     <span className="font-medium">{vmData.cpu_percent.toFixed(1)}%</span>
+                     <span className="font-medium">{vmData.cpu_percent ? vmData.cpu_percent.toFixed(1) : 0}%</span>
                    </div>
                    <Progress value={vmData.cpu_percent} className="h-2" />
                  </div>
@@ -743,7 +733,7 @@ export function VMDetailView() {
                  <Separator />
                  <div className="grid grid-cols-2 gap-4 text-center">
                    <div>
-                     <p className="text-2xl font-bold text-primary">{vmData.cpu_percent.toFixed(1)}%</p>
+                     <p className="text-2xl font-bold text-primary">{vmData.cpu_percent ? vmData.cpu_percent.toFixed(1) : 0}%</p>
                      <p className="text-xs text-muted-foreground">CPU Load</p>
                    </div>
                    <div>
@@ -756,9 +746,7 @@ export function VMDetailView() {
           </div>
         </TabsContent>
 
-        <TabsContent value="performance" className="space-y-6 mt-4">
-          {vmData && <VMPerformanceTab vmUuid={vmData.uuid} />}
-        </TabsContent>
+
 
         <TabsContent value="storage" className="space-y-6 mt-4">
           <Card>
@@ -839,7 +827,7 @@ export function VMDetailView() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {vmData.disks.map((device, index) => (
+                  {(vmData.disks || []).map((device, index) => (
                      <TableRow key={index} className="hover:bg-muted/50">
                        <TableCell className="font-mono px-4">{device.device}</TableCell>
                        <TableCell className="px-4">Disk</TableCell>
@@ -848,8 +836,19 @@ export function VMDetailView() {
                        <TableCell className="px-4">N/A</TableCell>
                        <TableCell className="px-4">N/A</TableCell>
                       <TableCell className="px-4">
-                        <Button variant="ghost" size="sm">
-                          <Edit className="h-4 w-4" />
+                        <Button 
+                          variant="ghost" 
+                          size="sm"
+                          className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                          onClick={() => {
+                            toast({
+                              title: "Feature Not Available",
+                              description: "Disk removal functionality will be available in a future update.",
+                              variant: "default",
+                            })
+                          }}
+                        >
+                          <Trash2 className="h-4 w-4" />
                         </Button>
                       </TableCell>
                     </TableRow>
@@ -942,7 +941,7 @@ export function VMDetailView() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {vmData.nics.map((iface, index) => (
+                  {(vmData.nics || []).map((iface, index) => (
                      <TableRow key={index} className="hover:bg-muted/50">
                        <TableCell className="font-mono px-4">eth{index}</TableCell>
                        <TableCell className="px-4">{iface.model}</TableCell>
@@ -953,8 +952,19 @@ export function VMDetailView() {
                          <Badge className="bg-green-500 hover:bg-green-600 text-white">active</Badge>
                        </TableCell>
                       <TableCell className="px-4">
-                        <Button variant="ghost" size="sm">
-                          <Edit className="h-4 w-4" />
+                        <Button 
+                          variant="ghost" 
+                          size="sm"
+                          className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                          onClick={() => {
+                            toast({
+                              title: "Feature Not Available",
+                              description: "Network interface removal functionality will be available in a future update.",
+                              variant: "default",
+                            })
+                          }}
+                        >
+                          <Trash2 className="h-4 w-4" />
                         </Button>
                       </TableCell>
                     </TableRow>

@@ -5,6 +5,7 @@ import (
 	"github.com/ccheshirecat/flint/pkg/core"
 	libvirt "github.com/libvirt/libvirt-go"
 	"strings"
+	"syscall"
 )
 
 // GetHostStatus implements HostStatus gathering per your blueprint.
@@ -140,17 +141,14 @@ func (c *Client) GetHostStatus() (core.HostStatus, error) {
 func (c *Client) GetHostResources() (core.HostResources, error) {
 	var out core.HostResources
 
-	// Memory: ConnectGetMemoryStats is not always present in go bindings,
-	// fallback to NodeGetInfo for basic info.
-	// Here we attempt ConnectGetMemoryStats via GetMemoryStats (best-effort)
-	// NOTE: adapt to your libvirt-go version if method names differ.
-	
 	// Try to get more accurate memory information
 	nodeInfo, err := c.conn.GetNodeInfo()
-	if err == nil {
-		out.CPUCores = int(nodeInfo.Cpus)
-		out.TotalMemoryKB = nodeInfo.Memory // This is in KiB
+	if err != nil {
+		return out, fmt.Errorf("failed to get node info: %w", err)
 	}
+	
+	out.CPUCores = int(nodeInfo.Cpus)
+	out.TotalMemoryKB = nodeInfo.Memory // This is in KiB
 	
 	// Try to get free memory
 	freeMem, err := c.conn.GetFreeMemory()
@@ -161,20 +159,58 @@ func (c *Client) GetHostResources() (core.HostResources, error) {
 		out.FreeMemoryKB = out.TotalMemoryKB / 10 // Conservative estimate
 	}
 
-	// Storage pools: sum capacities and allocation
+	// Storage pools: deduplicate by filesystem to avoid double-counting
 	pools, err := c.conn.ListAllStoragePools(0)
 	if err == nil {
-		var total, alloc uint64
+		filesystemStats := make(map[uint64]*syscall.Statfs_t)
+		var totalAlloc uint64
+		
 		for _, p := range pools {
 			info, ierr := p.GetInfo()
-			if ierr == nil {
-				total += uint64(info.Capacity)
-				alloc += uint64(info.Allocation)
+			if ierr != nil {
+				p.Free()
+				continue
 			}
+			
+			// Get pool path to determine filesystem
+			xmlDesc, xmlErr := p.GetXMLDesc(0)
+			poolPath := "/var/lib/libvirt/images" // default fallback
+			if xmlErr == nil {
+				// Extract path from XML - simple approach for common cases
+				if strings.Contains(xmlDesc, "<path>") {
+					start := strings.Index(xmlDesc, "<path>") + 6
+					end := strings.Index(xmlDesc[start:], "</path>")
+					if end > 0 {
+						poolPath = xmlDesc[start : start+end]
+					}
+				}
+			}
+			
+			// Get filesystem stats for this path
+			var stat syscall.Statfs_t
+			if syscall.Statfs(poolPath, &stat) == nil {
+				// Use filesystem ID to deduplicate
+				fsid := uint64(stat.Fsid.X__val[0])<<32 | uint64(stat.Fsid.X__val[1])
+				
+				// Only count this filesystem once
+				if _, exists := filesystemStats[fsid]; !exists {
+					filesystemStats[fsid] = &stat
+				}
+			}
+			
+			// Always sum allocation (actual usage) regardless of filesystem
+			totalAlloc += uint64(info.Allocation)
 			p.Free()
 		}
-		out.StorageTotalB = total
-		out.StorageUsedB = alloc
+		
+		// Calculate total capacity from unique filesystems
+		var totalCapacity uint64
+		for _, stat := range filesystemStats {
+			totalCapacity += uint64(stat.Blocks) * uint64(stat.Bsize)
+		}
+		
+		out.StorageTotalB = totalCapacity
+		out.StorageUsedB = totalAlloc
 	}
 
 	// Count active network interfaces across all running VMs

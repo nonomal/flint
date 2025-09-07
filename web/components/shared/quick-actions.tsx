@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useRouter } from "next/navigation"
+import { navigateTo, routes } from "@/lib/navigation"
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -21,21 +21,20 @@ interface QuickActionsProps {
 
 
 export function QuickActions({ actions, title = "Quick Actions" }: QuickActionsProps) {
-  const router = useRouter()
 
   const handleAction = (action: QuickAction) => {
     switch (action.label) {
       case "Create New VM":
-        router.push("/vms/create")
+        navigateTo(routes.vmCreate)
         break
       case "Add Storage Pool":
-        router.push("/storage")
+        navigateTo(routes.storage)
         break
       case "Configure Network":
-        router.push("/networking")
+        navigateTo(routes.networking)
         break
       case "View Performance":
-        router.push("/analytics")
+        navigateTo(routes.analytics)
         break
       default:
         action.onClick()
@@ -46,22 +45,22 @@ export function QuickActions({ actions, title = "Quick Actions" }: QuickActionsP
     {
       label: "Create New VM",
       icon: <Plus className="mr-2 h-4 w-4" />,
-      onClick: () => router.push("/vms/create"),
+      onClick: () => navigateTo(routes.vmCreate),
     },
     {
       label: "Add Storage Pool",
       icon: <HardDrive className="mr-2 h-4 w-4" />,
-      onClick: () => router.push("/storage"),
+      onClick: () => navigateTo(routes.storage),
     },
     {
       label: "Configure Network",
       icon: <Network className="mr-2 h-4 w-4" />,
-      onClick: () => router.push("/networking"),
+      onClick: () => navigateTo(routes.networking),
     },
     {
       label: "View Performance",
       icon: <TrendingUp className="mr-2 h-4 w-4" />,
-      onClick: () => router.push("/analytics"),
+      onClick: () => navigateTo(routes.analytics),
     },
   ]
 

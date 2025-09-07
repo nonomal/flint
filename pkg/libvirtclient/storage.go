@@ -83,6 +83,7 @@ func (c *Client) GetVolumes(poolName string) ([]core.Volume, error) {
 	return out, nil
 }
 
+
 func (c *Client) CreateVolume(poolName string, volConfig core.VolumeConfig) error {
 	pool, err := c.conn.LookupStoragePoolByName(poolName)
 	if err != nil {
@@ -101,4 +102,44 @@ func (c *Client) CreateVolume(poolName string, volConfig core.VolumeConfig) erro
 		return fmt.Errorf("create vol: %w", err)
 	}
 	return nil
+}
+
+// UpdateVolume updates a storage volume (resize operation)  
+func (c *Client) UpdateVolume(poolName string, volumeName string, config core.VolumeConfig) error {
+	pool, err := c.conn.LookupStoragePoolByName(poolName)
+	if err != nil {
+		return fmt.Errorf("lookup storage pool: %w", err)
+	}
+	defer pool.Free()
+
+	vol, err := pool.LookupStorageVolByName(volumeName)
+	if err != nil {
+		return fmt.Errorf("lookup volume: %w", err)
+	}
+	defer vol.Free()
+
+	// Resize the volume
+	newCapacity := config.SizeGB * 1024 * 1024 * 1024 // Convert GB to bytes
+	if err := vol.Resize(newCapacity, 0); err != nil {
+		return fmt.Errorf("resize volume: %w", err)
+	}
+
+	return nil
+}
+
+// DeleteVolume deletes a storage volume
+func (c *Client) DeleteVolume(poolName string, volumeName string) error {
+	pool, err := c.conn.LookupStoragePoolByName(poolName)
+	if err != nil {
+		return fmt.Errorf("lookup storage pool: %w", err)
+	}
+	defer pool.Free()
+
+	vol, err := pool.LookupStorageVolByName(volumeName)
+	if err != nil {
+		return fmt.Errorf("lookup volume: %w", err)
+	}
+	defer vol.Free()
+
+	return vol.Delete(0)
 }

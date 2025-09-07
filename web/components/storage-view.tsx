@@ -11,7 +11,10 @@ import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { HardDrive, Plus, Activity, PowerOff, AlertTriangle, Construction, Loader2, Edit, Trash2 } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
-import { StoragePool, Volume, storageAPI } from "@/lib/api"
+import { StoragePool, Volume, storageAPI, hostAPI } from "@/lib/api"
+import { SPACING, TYPOGRAPHY, GRIDS, TRANSITIONS, COLORS } from "@/lib/ui-constants"
+import { ConsistentButton } from "@/components/ui/consistent-button"
+import { ErrorState } from "@/components/ui/error-state"
 
 // Define the Pool type based on our API contract
 interface Pool {
@@ -66,6 +69,7 @@ export function StorageView() {
   const [activeTab, setActiveTab] = useState("pools")
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [hostResources, setHostResources] = useState<any>(null)
   const [isCreateVolumeDialogOpen, setIsCreateVolumeDialogOpen] = useState(false)
   const [newVolumeName, setNewVolumeName] = useState("")
   const [newVolumeSize, setNewVolumeSize] = useState(10) // Default to 10GB
@@ -78,17 +82,38 @@ export function StorageView() {
     const fetchStorageData = async () => {
       try {
         setIsLoading(true)
-        const pools = await storageAPI.getPools()
+        setError(null)
+        
+        const [pools, resources] = await Promise.all([
+          storageAPI.getPools(),
+          hostAPI.getResources()
+        ])
         setStoragePools(pools)
+        setHostResources(resources)
 
-        if (pools.length > 0) {
-          setSelectedPool(pools[0])
-          // Fetch volumes for the first pool
-          const poolVolumes = await storageAPI.getVolumes(pools[0].name)
-          setVolumes(poolVolumes)
+        if (pools && pools.length > 0) {
+          const firstPool = pools[0]
+          if (firstPool && firstPool.name) {
+            setSelectedPool(firstPool)
+            // Only fetch volumes if we have a valid pool name
+            try {
+              const poolVolumes = await storageAPI.getVolumes(firstPool.name)
+              setVolumes(poolVolumes)
+            } catch (err) {
+              console.error("Failed to load volumes for first pool:", err)
+              setVolumes([])
+            }
+          } else {
+            setSelectedPool(null)
+            setVolumes([])
+          }
+        } else {
+          setSelectedPool(null)
+          setVolumes([])
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load storage data")
+        // Don't reset storage data on error - keep existing data
       } finally {
         setIsLoading(false)
       }
@@ -98,12 +123,20 @@ export function StorageView() {
   }, [])
 
   const handlePoolSelect = async (pool: StoragePool) => {
+    if (!pool || !pool.name) {
+      console.error("Invalid pool selected:", pool)
+      return
+    }
+    
     setSelectedPool(pool)
+    setVolumes([]) // Clear volumes immediately
+    
     try {
       const poolVolumes = await storageAPI.getVolumes(pool.name)
       setVolumes(poolVolumes)
     } catch (err) {
       console.error("Failed to load volumes for pool:", pool.name, err)
+      setVolumes([])
     }
   }
 
@@ -116,11 +149,11 @@ export function StorageView() {
   }
 
   const handleCreateVolume = async () => {
-    if (!selectedPool) return
+    if (!selectedPool?.name) return
     
     try {
       setIsCreatingVolume(true)
-      const newVolume = await storageAPI.createVolume(selectedPool.name, {
+      const newVolume = await storageAPI.createVolume(selectedPool!.name, {
         Name: newVolumeName,
         SizeGB: newVolumeSize,
       })
@@ -134,7 +167,7 @@ export function StorageView() {
         // Don't show error since volume was created successfully
         setVolumes(prevVolumes => [...prevVolumes, {
           name: newVolumeName,
-          path: `${selectedPool.name}/${newVolumeName}`,
+          path: `${selectedPool!.name}/${newVolumeName}`,
           capacity_b: newVolumeSize * 1024 * 1024 * 1024
         }])
       }
@@ -163,29 +196,31 @@ export function StorageView() {
 
   if (error) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-center">
-          <h2 className="text-xl font-semibold mb-2">Error Loading Storage</h2>
-          <p className="text-muted-foreground">{error}</p>
-        </div>
+      <div className={`${SPACING.section} ${SPACING.page}`}>
+        <ErrorState 
+          title="Error Loading Storage"
+          description={error}
+        />
       </div>
     )
   }
 
   return (
-    <div className="space-y-8 p-6 sm:p-8 lg:p-10">
+    <div className={`${SPACING.section} ${SPACING.page}`}>
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="space-y-1">
-          <h1 className="text-3xl font-bold tracking-tight text-foreground">Storage</h1>
+          <h1 className={TYPOGRAPHY.pageTitle}>Storage</h1>
           <p className="text-muted-foreground">Manage storage pools and virtual disk volumes</p>
         </div>
         <div className="flex gap-2">
           <Dialog>
             <DialogTrigger asChild>
-              <Button className="bg-primary text-primary-foreground hover:bg-primary/90 hover-fast shadow-md hover:shadow-lg">
-                <Plus className="mr-2 h-4 w-4" />
+              <ConsistentButton 
+                className="bg-primary text-primary-foreground hover:bg-primary/90"
+                icon={<Plus className="h-4 w-4" />}
+              >
                 Create Pool
-              </Button>
+              </ConsistentButton>
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
@@ -221,7 +256,7 @@ export function StorageView() {
       </div>
 
       {/* Storage Overview Cards */}
-      <div className="grid gap-6 md:grid-cols-4">
+      <div className={`${GRIDS.fourCol} ${SPACING.grid}`}>
         <Card>
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
@@ -240,7 +275,7 @@ export function StorageView() {
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Active Pools</p>
                 <p className="text-2xl font-bold text-primary">
-                  {storagePools.filter((pool) => pool.allocation_b > 0).length}
+                  {(storagePools || []).filter((pool) => pool.allocation_b > 0).length}
                 </p>
               </div>
               <Activity className="h-8 w-8 text-primary" />
@@ -254,7 +289,7 @@ export function StorageView() {
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Total Capacity</p>
                 <p className="text-2xl font-bold">
-                  {formatSize(storagePools.reduce((acc, pool) => acc + pool.capacity_b, 0))}
+                  {hostResources ? formatSize(hostResources.storage_total_b) : formatSize(storagePools.reduce((acc, pool) => acc + pool.capacity_b, 0))}
                 </p>
               </div>
               <HardDrive className="h-8 w-8 text-muted-foreground" />
@@ -283,20 +318,17 @@ export function StorageView() {
         </TabsList>
 
         <TabsContent value="pools" className="space-y-6 mt-6">
-          <div className="grid gap-6 lg:grid-cols-3">
+          <div className={`grid gap-6 lg:grid-cols-3`}>
             {/* Storage Pools List */}
             <div className="lg:col-span-1">
               <Card>
                 <CardHeader className="pb-4">
                   <CardTitle className="flex items-center justify-between">
                     Storage Pools
-                    <Button size="sm" variant="outline">
-                      <Plus className="h-4 w-4" />
-                    </Button>
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3 pb-4">
-                  {storagePools.map((pool) => (
+                  {(storagePools || []).map((pool) => (
                     <div
                       key={pool.name}
                       className={`cursor-pointer rounded-lg border p-3 transition-colors hover:bg-muted/50 ${
@@ -331,21 +363,20 @@ export function StorageView() {
 
             {/* Selected Pool Details */}
             <div className="lg:col-span-2">
-              {selectedPool && (
+              {selectedPool?.name && (
                 <Card>
                   <CardHeader className="pb-4">
                     <CardTitle className="flex items-center justify-between">
                       {selectedPool.name}
                       <div className="flex gap-2">
-                        <Button size="sm" variant="outline">
-                          Edit
-                        </Button>
                         <Dialog open={isCreateVolumeDialogOpen} onOpenChange={setIsCreateVolumeDialogOpen}>
                           <DialogTrigger asChild>
-                            <Button size="sm">
-                              <Plus className="mr-2 h-4 w-4" />
+                            <ConsistentButton 
+                              size="sm"
+                              icon={<Plus className="h-4 w-4" />}
+                            >
                               Create Volume
-                            </Button>
+                            </ConsistentButton>
                           </DialogTrigger>
                           <DialogContent className="sm:max-w-[425px]">
                             <DialogHeader>
@@ -454,7 +485,7 @@ export function StorageView() {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {volumes.map((volume) => (
+                          {(volumes || []).map((volume) => (
                             <TableRow key={volume.name}>
                               <TableCell className="font-medium">{volume.name}</TableCell>
                               <TableCell>qcow2</TableCell>
@@ -482,16 +513,25 @@ export function StorageView() {
                                     size="sm" 
                                     className="text-destructive hover:text-destructive hover:bg-destructive/10"
                                     onClick={async () => {
+                                      if (!selectedPool?.name) {
+                                        toast({
+                                          title: "Error",
+                                          description: "No storage pool selected",
+                                          variant: "destructive",
+                                        })
+                                        return
+                                      }
+                                      
                                       if (confirm(`Are you sure you want to delete volume "${volume.name}"?`)) {
                                         try {
-                                          const response = await fetch(`/api/storage-pools/${selectedPool.name}/volumes/${volume.name}`, {
+                                          const response = await fetch(`/api/storage-pools/${selectedPool!.name}/volumes/${volume.name}`, {
                                             method: 'DELETE',
                                           })
                                           if (!response.ok) {
                                             throw new Error('Failed to delete volume')
                                           }
-                                          const updatedVolumes = await storageAPI.getVolumes(selectedPool.name)
-                                          setVolumes(updatedVolumes || [])
+                                          const updatedVolumes = await storageAPI.getVolumes(selectedPool!.name)
+                                          setVolumes(updatedVolumes)
                                           toast({
                                             title: "Success",
                                             description: `Volume "${volume.name}" deleted successfully`,
@@ -530,7 +570,7 @@ export function StorageView() {
                 <Dialog open={isCreateVolumeDialogOpen} onOpenChange={setIsCreateVolumeDialogOpen}>
                   <DialogTrigger asChild>
                     <Button size="sm">
-                      <Plus className="mr-2 h-4 w-4" />
+                      <Plus className="h-4 w-4" />
                       Create Volume
                     </Button>
                   </DialogTrigger>
@@ -581,7 +621,7 @@ export function StorageView() {
                               }}
                               className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                             >
-                              {storagePools.map(pool => (
+                              {(storagePools || []).map(pool => (
                                 <option key={pool.name} value={pool.name}>{pool.name}</option>
                               ))}
                             </select>
@@ -624,7 +664,7 @@ export function StorageView() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {volumes.map((volume) => (
+                  {(volumes || []).map((volume) => (
                     <TableRow key={volume.name}>
                       <TableCell className="font-medium">{volume.name}</TableCell>
                       <TableCell>{selectedPool?.name || "Unknown"}</TableCell>
@@ -636,7 +676,16 @@ export function StorageView() {
                       </TableCell>
                       <TableCell className="font-mono text-xs max-w-xs truncate">{volume.path}</TableCell>
                       <TableCell>
-                        <Button variant="ghost" size="sm">
+                        <Button 
+                          variant="ghost" 
+                          size="sm"
+                          onClick={() => {
+                            setEditingVolume(volume)
+                            setEditVolumeSize(Math.round(volume.capacity_b / (1024 * 1024 * 1024)))
+                            setIsEditDialogOpen(true)
+                          }}
+                        >
+                          <Edit className="h-4 w-4 mr-1" />
                           Edit
                         </Button>
                       </TableCell>
@@ -648,6 +697,102 @@ export function StorageView() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Edit Volume Dialog */}
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Edit Volume</DialogTitle>
+            <DialogDescription>
+              Modify volume settings. Note: Only expansion is supported for safety.
+            </DialogDescription>
+          </DialogHeader>
+          {editingVolume && (
+            <form onSubmit={async (e) => {
+              e.preventDefault()
+              if (!editingVolume || !selectedPool?.name) return
+
+              try {
+                const response = await fetch(`/api/storage-pools/${selectedPool.name}/volumes/${editingVolume.name}`, {
+                  method: 'PUT',
+                  headers: {
+                    'Content-Type': 'application/json',
+                  },
+                  credentials: 'include',
+                  body: JSON.stringify({ size_gb: editVolumeSize })
+                })
+
+                if (!response.ok) {
+                  const errorData = await response.json().catch(() => ({}))
+                  throw new Error(errorData.error || `Failed to update volume (HTTP ${response.status})`)
+                }
+
+                // Refresh volumes list
+                const updatedVolumes = await storageAPI.getVolumes(selectedPool.name)
+                setVolumes(updatedVolumes)
+
+                toast({
+                  title: "Success",
+                  description: `Volume "${editingVolume.name}" updated successfully`,
+                })
+                setIsEditDialogOpen(false)
+                setEditingVolume(null)
+              } catch (err) {
+                toast({
+                  title: "Update Failed",
+                  description: err instanceof Error ? err.message : "Failed to update volume",
+                  variant: "destructive",
+                })
+              }
+            }}>
+              <div className="grid gap-4 py-4">
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="edit-volume-name" className="text-right">
+                    Name
+                  </Label>
+                  <Input
+                    id="edit-volume-name"
+                    value={editingVolume.name}
+                    className="col-span-3"
+                    disabled
+                    title="Volume name cannot be changed"
+                  />
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="edit-volume-size" className="text-right">
+                    Size (GB)
+                  </Label>
+                  <Input
+                    id="edit-volume-size"
+                    type="number"
+                    min={Math.ceil(editingVolume.capacity_b / (1024 * 1024 * 1024))}
+                    value={editVolumeSize}
+                    onChange={(e) => setEditVolumeSize(parseInt(e.target.value) || 0)}
+                    className="col-span-3"
+                  />
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label className="text-right">Current</Label>
+                  <div className="col-span-3 text-sm text-muted-foreground">
+                    {Math.round(editingVolume.capacity_b / (1024 * 1024 * 1024))} GB
+                  </div>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => {
+                  setIsEditDialogOpen(false)
+                  setEditingVolume(null)
+                }}>
+                  Cancel
+                </Button>
+                <Button type="submit">
+                  Update Volume
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

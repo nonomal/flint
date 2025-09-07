@@ -5,7 +5,8 @@ import { Inter } from "next/font/google";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/toaster";
 import { Suspense } from "react";
-import "./globals.css";
+import "./globals.css"
+import "../styles/static-export-fixes.css";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -48,9 +49,17 @@ export default function RootLayout({
           ${inter.variable}
           bg-background text-foreground
           transition-colors duration-200 ease-out
+          min-h-screen overflow-x-hidden
         `}
       >
-        <Suspense fallback={<div className="fixed inset-0 bg-background" />}>
+        <Suspense fallback={
+          <div className="fixed inset-0 bg-background flex items-center justify-center">
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <div className="h-6 w-6 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+              <span>Loading Flint...</span>
+            </div>
+          </div>
+        }>
           <ThemeProvider
             attribute="class"
             defaultTheme="light"

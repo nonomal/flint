@@ -42,6 +42,9 @@ import { Image, imageAPI } from "@/lib/api"
 import { LoadingState } from "@/components/ui/loading-state"
 import { EmptyState } from "@/components/ui/empty-state"
 import { ImageCard } from "@/components/shared/image-card"
+import { SPACING, TYPOGRAPHY, GRIDS, TRANSITIONS } from "@/lib/ui-constants"
+import { ConsistentButton } from "@/components/ui/consistent-button"
+import { ErrorState } from "@/components/ui/error-state"
 
 export function ImagesView() {
   const [images, setImages] = useState<Image[]>([])
@@ -65,6 +68,7 @@ export function ImagesView() {
         setImages(images)
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load images")
+        // Don't reset images on error - keep existing data
       } finally {
         setIsLoading(false)
       }
@@ -73,7 +77,7 @@ export function ImagesView() {
     fetchImages()
   }, [])
 
-  const filteredImages = images.filter((image) => {
+  const filteredImages = (images || []).filter((image) => {
     const matchesSearch =
       image.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (image.os_info && image.os_info.toLowerCase().includes(searchQuery.toLowerCase()))
@@ -174,12 +178,20 @@ export function ImagesView() {
   }
 
   const handleDeleteImage = async (imageId: string) => {
+    if (!confirm("Are you sure you want to delete this image? This action cannot be undone.")) {
+      return
+    }
+    
     try {
       await imageAPI.delete(imageId)
       // Refresh images list
       const updatedImages = await imageAPI.getAll()
       setImages(updatedImages)
+      
+      // Show success message
+      console.log(`Image ${imageId} deleted successfully`)
     } catch (error) {
+      console.error("Failed to delete image:", error)
       setError(error instanceof Error ? error.message : "Failed to delete image")
     }
   }
@@ -190,23 +202,26 @@ export function ImagesView() {
 
   if (error) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-center">
-          <h2 className="text-xl font-semibold mb-2">Error Loading Images</h2>
-          <p className="text-muted-foreground">{error}</p>
-        </div>
-      </div>
+      <ErrorState 
+        title="Error Loading Images"
+        description={error}
+      />
     )
   }
 
   return (
-    <div className="space-y-8 p-6 sm:p-8 lg:p-10">
+    <div className={SPACING.section}>
+      {/* Header */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="space-y-1">
+          <h2 className={TYPOGRAPHY.sectionTitle}>My Images</h2>
+          <p className="text-muted-foreground">Manage your uploaded images and templates</p>
+        </div>
         <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
           <DialogTrigger asChild>
-            <Button>
-              <Plus className="mr-2 h-4 w-4" />
+            <ConsistentButton icon={<Plus className="h-4 w-4" />}>
               Add Image
-            </Button>
+            </ConsistentButton>
           </DialogTrigger>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
@@ -333,6 +348,7 @@ export function ImagesView() {
             </Tabs>
           </DialogContent>
         </Dialog>
+      </div>
       
       {/* Toolbar */}
       <Card className="mt-2">
@@ -366,7 +382,7 @@ export function ImagesView() {
 
       {/* Image Grid */}
       {filteredImages.length > 0 ? (
-        <div className="grid gap-6 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-3 mt-2">
+        <div className={`${GRIDS.threeCol} ${SPACING.grid} mt-2`}>
           {filteredImages.map((image) => (
             <ImageCard
               key={image.id}

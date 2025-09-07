@@ -1,8 +1,11 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { navigateTo, routes } from "@/lib/navigation"
+import { SPACING, TYPOGRAPHY, TRANSITIONS } from "@/lib/ui-constants"
+import { ConsistentButton } from "@/components/ui/consistent-button"
 import { storageAPI, networkAPI, imageAPI, Image } from "@/lib/api"
+import { ImageRepository } from "@/components/image-repository"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -145,13 +148,13 @@ export function CreateVMWizard() {
     const fetchData = async () => {
       try {
         const pools = await storageAPI.getPools()
-        setStoragePools(pools.map(p => ({
+        setStoragePools((pools || []).map(p => ({
           name: p.name,
           path: '', // API doesn't provide path
           available: `${Math.round(p.capacity_b / 1024 / 1024 / 1024)}GB`
         })))
         const nets = await networkAPI.getNetworks()
-        setVirtualNetworks(nets.map(n => ({
+        setVirtualNetworks((nets || []).map(n => ({
           name: n.name,
           type: n.type,
           range: n.ipRange
@@ -163,6 +166,7 @@ export function CreateVMWizard() {
           setImages(imagesData)
         } catch (err) {
           console.warn('Failed to fetch images:', err)
+          setImages([])
         }
       } catch (err) {
         console.error('Failed to fetch data:', err)
@@ -200,7 +204,7 @@ export function CreateVMWizard() {
     }
   }
 
-  const router = useRouter()
+  
 
   const formatSize = (bytes: number) => {
     const gb = bytes / 1024 / 1024 / 1024
@@ -249,7 +253,7 @@ export function CreateVMWizard() {
       const newVM = await response.json();
 
       // SUCCESS: Redirect the user to the new VM's detail page.
-      router.push(`/vms/detail?id=${newVM.uuid}`);
+      navigateTo(routes.vmDetail(newVM.uuid));
 
     } catch (error) {
       // ERROR: Display an error message/toast to the user.
@@ -339,8 +343,8 @@ export function CreateVMWizard() {
               <div className="space-y-3">
                 <Label>Available ISO Images</Label>
                 <div className="space-y-2 max-h-60 overflow-y-auto">
-                  {images.filter(img => img.type === "iso").length > 0 ? (
-                    images.filter(img => img.type === "iso").map((image) => (
+                  {(images || []).filter(img => img.type === "iso").length > 0 ? (
+                    (images || []).filter(img => img.type === "iso").map((image) => (
                       <div
                         key={image.id}
                         className={`cursor-pointer rounded-lg border-2 p-3 transition-all duration-200 ${
@@ -377,8 +381,8 @@ export function CreateVMWizard() {
                 <Label>Available Cloud Images</Label>
                 <p className="text-sm text-muted-foreground">Pre-configured cloud images with cloud-init support</p>
                 <div className="space-y-2 max-h-60 overflow-y-auto">
-                  {images.filter(img => img.type === "template").length > 0 ? (
-                    images.filter(img => img.type === "template").map((image) => (
+                  {(images || []).filter(img => img.type === "template").length > 0 ? (
+                    (images || []).filter(img => img.type === "template").map((image) => (
                       <div
                         key={image.id}
                         className={`cursor-pointer rounded-lg border-2 p-3 transition-all duration-200 ${
@@ -643,7 +647,7 @@ export function CreateVMWizard() {
                   <CardTitle className="text-base">Storage Pool</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  {storagePools.map((pool) => (
+                  {(storagePools || []).map((pool) => (
                     <div
                       key={pool.name}
                       className={`cursor-pointer rounded-lg border p-3 transition-colors hover:bg-muted/50 ${
@@ -705,7 +709,7 @@ export function CreateVMWizard() {
                     <Network className="h-4 w-4" />
                     Network Interfaces
                   </span>
-                  <Button
+                  <ConsistentButton
                     size="sm"
                     variant="outline"
                     onClick={() =>
@@ -715,7 +719,7 @@ export function CreateVMWizard() {
                     }
                   >
                     Add Interface
-                  </Button>
+                  </ConsistentButton>
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -724,17 +728,17 @@ export function CreateVMWizard() {
                     <div className="flex items-center justify-between mb-3">
                       <h4 className="font-medium">Interface {index + 1}</h4>
                       {config.networks.length > 1 && (
-                        <Button
+                        <ConsistentButton
                           size="sm"
                           variant="ghost"
                           onClick={() =>
                             updateConfig({
-                              networks: config.networks.filter((_, i) => i !== index),
+                              networks: (config.networks || []).filter((_, i) => i !== index),
                             })
                           }
                         >
                           Remove
-                        </Button>
+                        </ConsistentButton>
                       )}
                     </div>
                     <div className="grid gap-4 md:grid-cols-2">
@@ -752,7 +756,7 @@ export function CreateVMWizard() {
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            {virtualNetworks.map((network) => (
+                            {(virtualNetworks || []).map((network) => (
                               <SelectItem key={network.name} value={network.name}>
                                 {network.name} ({network.type})
                               </SelectItem>
@@ -895,7 +899,7 @@ export function CreateVMWizard() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-2">
-                  {config.networks.map((netConfig, index) => (
+                  {(config.networks || []).map((netConfig, index) => (
                     <div key={index} className="flex justify-between text-sm">
                       <span className="text-muted-foreground">Interface {index + 1}</span>
                       <span className="font-medium">
@@ -930,10 +934,10 @@ export function CreateVMWizard() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="sm">
+          <ConsistentButton variant="ghost" size="sm">
             <ArrowLeft className="mr-2 h-4 w-4" />
             Back to VMs
-          </Button>
+          </ConsistentButton>
           <div>
           </div>
         </div>
@@ -943,7 +947,7 @@ export function CreateVMWizard() {
       <Card>
         <CardContent className="p-4">
           <div className="flex items-center justify-between">
-            {steps.map((step, index) => (
+            {(steps || []).map((step, index) => (
               <div key={step.id} className="flex items-center">
                 <div
                   className={`flex h-8 w-8 items-center justify-center rounded-full border-2 transition-colors ${
@@ -980,14 +984,14 @@ export function CreateVMWizard() {
 
       {/* Navigation */}
       <div className="flex items-center justify-between">
-        <Button variant="outline" onClick={prevStep} disabled={currentStep === 0}>
+        <ConsistentButton variant="outline" onClick={prevStep} disabled={currentStep === 0}>
           <ArrowLeft className="mr-2 h-4 w-4" />
           Previous
-        </Button>
+        </ConsistentButton>
 
         <div className="flex gap-2">
           {currentStep === steps.length - 1 ? (
-            <Button
+            <ConsistentButton
               className="bg-primary text-primary-foreground hover:bg-primary/90"
               onClick={() => {
                 const formData = {
@@ -1009,12 +1013,12 @@ export function CreateVMWizard() {
             >
               <Zap className="mr-2 h-4 w-4" />
               Create Virtual Machine
-            </Button>
+            </ConsistentButton>
           ) : (
-            <Button onClick={nextStep} disabled={!canProceed()}>
+            <ConsistentButton onClick={nextStep} disabled={!canProceed()}>
               Next
               <ArrowRight className="ml-2 h-4 w-4" />
-            </Button>
+            </ConsistentButton>
           )}
         </div>
       </div>

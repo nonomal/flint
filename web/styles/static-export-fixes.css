@@ -1,0 +1,25 @@
+/* Static export specific fixes */
+@media screen {
+  /* Ensure proper viewport handling in static exports */
+  html, body {
+    height: 100vh;
+    overflow: hidden;
+  }
+  
+  /* Fix for static export scroll issues */
+  #__next {
+    height: 100vh;
+    overflow: hidden;
+  }
+  
+  /* Prevent extra space in static exports */
+  .main-content-wrapper {
+    max-height: calc(100vh - 3.5rem);
+  }
+  
+  @media (min-width: 640px) {
+    .main-content-wrapper {
+      max-height: calc(100vh - 4rem);
+    }
+  }
+}

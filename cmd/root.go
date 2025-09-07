@@ -26,10 +26,9 @@ func init() {
 	// This flag will be available to all subcommands
 	rootCmd.PersistentFlags().StringVar(&socketPath, "socket", "/var/run/libvirt/libvirt-sock", "Path to the libvirt socket")
 	rootCmd.AddCommand(serveCmd)
-	rootCmd.AddCommand(launchCmd)
-	rootCmd.AddCommand(listCmd)
-	rootCmd.AddCommand(sshCmd)
-	rootCmd.AddCommand(consoleCmd)
+	rootCmd.AddCommand(vmCmd)
 	rootCmd.AddCommand(snapshotCmd)
-	rootCmd.AddCommand(deleteCmd)
+	rootCmd.AddCommand(networkCmd)
+	rootCmd.AddCommand(storageCmd)
+	rootCmd.AddCommand(imageCmd)
 }

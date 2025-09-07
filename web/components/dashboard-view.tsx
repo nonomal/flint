@@ -1,7 +1,10 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { navigateTo, routes } from "@/lib/navigation"
+import { SPACING, TYPOGRAPHY, GRIDS, TRANSITIONS } from "@/lib/ui-constants"
+import { ConsistentButton } from "@/components/ui/consistent-button"
+import { ErrorState } from "@/components/ui/error-state"
 import { Button } from "@/components/ui/button"
 import { TrendingUp, Plus, Loader2 } from "lucide-react"
 import { ResourceCard } from "@/components/shared/resource-card"
@@ -26,7 +29,7 @@ interface Activity {
 }
 
 export function DashboardView() {
-  const router = useRouter()
+  
   const { toast } = useToast()
   const [hostStatus, setHostStatus] = useState<HostStatus | null>(null)
   const [hostResources, setHostResources] = useState<HostResources | null>(null)
@@ -84,11 +87,13 @@ export function DashboardView() {
   }
 
   const formatMemory = (kb: number) => {
+    if (!kb || isNaN(kb)) return "0"
     const gb = kb / 1024 / 1024
     return gb.toFixed(1)
   }
 
   const formatStorage = (bytes: number) => {
+    if (!bytes || isNaN(bytes)) return "0"
     const gb = bytes / 1024 / 1024 / 1024
     return gb.toFixed(0)
   }
@@ -146,7 +151,7 @@ export function DashboardView() {
     }
 
     if (action === "detail") {
-      router.push(`/vms/detail?id=${vmId}`);
+      navigateTo(routes.vmDetail(vmId));
       return;
     }
 
@@ -200,17 +205,17 @@ export function DashboardView() {
 
   if (error || !hostResources || !hostStatus) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-center">
-          <h2 className="text-xl font-semibold mb-2">Error Loading Dashboard</h2>
-          <p className="text-muted-foreground">{error || "Failed to load dashboard data"}</p>
-        </div>
+      <div className={SPACING.section}>
+        <ErrorState 
+          title="Error Loading Dashboard"
+          description={error || "Failed to load dashboard data"}
+        />
       </div>
     )
   }
 
   return (
-    <div className="space-y-8 p-6 sm:p-8 lg:p-10">
+    <div className={SPACING.section}>
       {/* Page Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="space-y-1">
@@ -218,33 +223,36 @@ export function DashboardView() {
           <p className="text-muted-foreground">Manage and monitor your virtual machine fleet</p>
         </div>
         <div className="flex gap-2">
-          <Button 
+          <ConsistentButton 
             variant="outline" 
             size="sm" 
             className="hover-fast shadow-sm hover:shadow-md border-border/50"
-            onClick={() => router.push("/analytics")}
+            onClick={() => navigateTo(routes.analytics)}
           >
-            <TrendingUp className="mr-2 h-4 w-4" />
+            <TrendingUp className="h-4 w-4" />
             <span className="hidden sm:inline">View </span>Analytics
-          </Button>
-          <Button onClick={() => router.push("/vms/create")} className="bg-primary text-primary-foreground hover:bg-primary/90 hover-fast shadow-md hover:shadow-lg">
-            <Plus className="mr-2 h-4 w-4" />
+          </ConsistentButton>
+          <ConsistentButton onClick={() => navigateTo(routes.vmCreate)} className="bg-primary text-primary-foreground hover:bg-primary/90 hover-fast shadow-md hover:shadow-lg">
+            <Plus className="h-4 w-4" />
             Create VM
-          </Button>
+          </ConsistentButton>
         </div>
       </div>
 
       {hostStatus?.health_checks && (
-        <SystemAlerts 
-          alerts={hostStatus.health_checks.map(check => ({
-            type: check.type as "warning" | "info" | "error",
-            message: check.message,
-            time: "Just now",
-            priority: check.type === "error" ? 1 : check.type === "warning" ? 2 : 3,
-            category: "system"
-          }))} 
-          hostResources={hostResources}
-        />
+        <div className="mb-8">
+          <SystemAlerts 
+            alerts={hostStatus.health_checks.map((check, index) => ({
+              id: `health-check-${index}-${Date.now()}`,
+              type: check.type as "warning" | "info" | "error",
+              message: check.message,
+              time: "Just now",
+              priority: check.type === "error" ? 1 : check.type === "warning" ? 2 : 3,
+              category: "system"
+            }))} 
+            hostResources={hostResources}
+          />
+        </div>
       )}
 
       <div className="grid gap-6 lg:grid-cols-3">
@@ -252,40 +260,40 @@ export function DashboardView() {
         <div className="space-y-6 lg:col-span-2">
           <div>
             <h2 className="text-xl font-semibold mb-6">Host Resources</h2>
-            <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
-              <ResourceCard
-                title="CPU Usage"
-                value={`${Math.round((hostResources.total_memory_kb - hostResources.free_memory_kb) / hostResources.total_memory_kb * 100)}%`}
-                percentage={(hostResources.total_memory_kb - hostResources.free_memory_kb) / hostResources.total_memory_kb * 100}
-                icon={<Cpu className="h-4 w-4" />}
-              >
-                <p className="text-xs text-muted-foreground mt-1">
-                  {hostResources.cpu_cores} cores
-                </p>
-              </ResourceCard>
+            <div className={`${GRIDS.fourCol} ${SPACING.gridCompact}`}>
+               <ResourceCard
+                 title="CPU Usage"
+                 value="0%"
+                 percentage={0}
+                 icon={<Cpu className="h-4 w-4" />}
+               >
+                 <p className="text-xs text-muted-foreground mt-1">
+                   {hostResources?.cpu_cores || 0} cores
+                 </p>
+               </ResourceCard>
 
               <ResourceCard
                 title="Memory"
-                value={`${formatMemory(hostResources.total_memory_kb - hostResources.free_memory_kb)}GB`}
-                percentage={(hostResources.total_memory_kb - hostResources.free_memory_kb) / hostResources.total_memory_kb * 100}
+                value={`${formatMemory((hostResources?.total_memory_kb || 0) - (hostResources?.free_memory_kb || 0))}GB`}
+                percentage={hostResources?.total_memory_kb && hostResources?.free_memory_kb ? ((hostResources.total_memory_kb - hostResources.free_memory_kb) / hostResources.total_memory_kb * 100) : 0}
                 icon={<MemoryStick className="h-4 w-4" />}
               >
-                <p className="text-xs text-muted-foreground mt-1">{formatMemory(hostResources.free_memory_kb)}GB available</p>
+                <p className="text-xs text-muted-foreground mt-1">{formatMemory(hostResources?.free_memory_kb || 0)}GB available</p>
               </ResourceCard>
 
-              <ResourceCard
-                title="Storage"
-                value={`${formatStorage(hostResources.storage_used_b)}GB`}
-                percentage={(hostResources.storage_used_b / hostResources.storage_total_b) * 100}
-                icon={<HardDrive className="h-4 w-4" />}
-              >
-                <p className="text-xs text-muted-foreground mt-1">{formatStorage(hostResources.storage_total_b)}GB total</p>
-              </ResourceCard>
+               <ResourceCard
+                 title="Storage"
+                 value={`${formatStorage(hostResources.storage_used_b || 0)}GB`}
+                 percentage={hostResources.storage_total_b ? (hostResources.storage_used_b / hostResources.storage_total_b) * 100 : 0}
+                 icon={<HardDrive className="h-4 w-4" />}
+               >
+                 <p className="text-xs text-muted-foreground mt-1">{formatStorage(hostResources.storage_total_b || 0)}GB total</p>
+               </ResourceCard>
 
-              <ResourceCard title="Network" value={hostResources?.active_interfaces?.toString() || "0"} icon={<Network className="h-4 w-4" />}>
-                <div className="mt-2 text-xs text-muted-foreground">Active interfaces</div>
-                <p className="text-xs text-muted-foreground mt-1">Network monitoring</p>
-              </ResourceCard>
+               <ResourceCard title="Network" value={(hostResources.active_interfaces || 0).toString()} icon={<Network className="h-4 w-4" />}>
+                 <div className="mt-2 text-xs text-muted-foreground">Active interfaces</div>
+                 <p className="text-xs text-muted-foreground mt-1">Network monitoring</p>
+               </ResourceCard>
             </div>
           </div>
 
@@ -317,18 +325,18 @@ export function DashboardView() {
           <div>
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-6">
               <h2 className="text-xl font-semibold">Virtual Machines</h2>
-              <Button
+              <ConsistentButton
                 variant="outline"
                 size="sm"
                 className="self-start hover-fast shadow-sm hover:shadow-md border-border/50"
-                onClick={() => router.push("/vms")}
+                onClick={() => navigateTo(routes.vms)}
               >
                 View All
-              </Button>
+              </ConsistentButton>
             </div>
 
             {virtualMachines.length > 0 ? (
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <div className={`${GRIDS.threeCol} ${SPACING.grid}`}>
                 {virtualMachines.slice(0, 6).map((vm) => {
                   // Transform VMSummary to match VMCard interface
                   const transformedVM = {
@@ -350,13 +358,13 @@ export function DashboardView() {
                     <div 
                       key={vm.uuid}
                       className="cursor-pointer"
-                      onClick={() => router.push(`/vms/detail?id=${vm.uuid}`)}
+                      onClick={() => navigateTo(routes.vmDetail(vm.uuid))}
                     >
                       <VMCard 
                         vm={transformedVM} 
                         onAction={(action, vmId) => {
                           if (action === "detail") {
-                            router.push(`/vms/detail?id=${vm.uuid}`)
+                            navigateTo(routes.vmDetail(vm.uuid))
                           } else {
                             handleVMAction(action, vm.uuid)
                           }
@@ -372,10 +380,10 @@ export function DashboardView() {
                 description="Get started by creating your first virtual machine"
                 icon={<Server className="h-8 w-8 text-muted-foreground" />}
                 action={
-                  <Button onClick={() => router.push("/vms/create")}>
-                    <Plus className="mr-2 h-4 w-4" />
+                  <ConsistentButton onClick={() => navigateTo(routes.vmCreate)}>
+                    <Plus className="h-4 w-4" />
                     Create VM
-                  </Button>
+                  </ConsistentButton>
                 }
               />
             )}
@@ -383,7 +391,7 @@ export function DashboardView() {
         </div>
 
         {/* Right Sidebar - Hidden on mobile, shown on larger screens */}
-        <div className="hidden lg:block space-y-6">
+        <div className="hidden lg:block space-y-8">
           <ActivityFeed activities={recentActivity} />
           <QuickActions />
         </div>

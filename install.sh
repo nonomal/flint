@@ -65,9 +65,22 @@ main() {
     sudo chmod +x "$INSTALL_DIR/$BINARY_NAME"
 
     green "✅ Installed $BINARY_NAME to $INSTALL_DIR/$BINARY_NAME"
+
+    # Create config directory with proper permissions
+    config_dir="$HOME/.flint"
+    if [[ ! -d "$config_dir" ]]; then
+        mkdir -p "$config_dir"
+        chmod 755 "$config_dir"
+        green "📁 Created config directory: $config_dir"
+    fi
+
     echo
     green "🎉 Flint installation complete!"
     echo "Run: flint serve"
+    echo
+    yellow "ℹ️ Your API key will be automatically generated and saved to:"
+    echo "   $config_dir/config.json"
+    echo "   You can view/modify it there if needed."
 }
 
 main "$@"

@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flint API Documentation</title>
+    <link rel="stylesheet" type="text/css" href="https://unpkg.com/swagger-ui-dist@5.7.2/swagger-ui.css" />
+    <link rel="icon" type="image/png" href="https://unpkg.com/swagger-ui-dist@5.7.2/favicon-32x32.png" sizes="32x32" />
+    <style>
+        html {
+            box-sizing: border-box;
+            overflow: -moz-scrollbars-vertical;
+            overflow-y: scroll;
+        }
+        *, *:before, *:after {
+            box-sizing: inherit;
+        }
+        body {
+            margin:0;
+            background: #fafafa;
+        }
+    </style>
+</head>
+<body>
+    <div id="swagger-ui"></div>
+    <script src="https://unpkg.com/swagger-ui-dist@5.7.2/swagger-ui-bundle.js" crossorigin></script>
+    <script src="https://unpkg.com/swagger-ui-dist@5.7.2/swagger-ui-standalone-preset.js" crossorigin></script>
+    <script>
+        window.onload = function() {
+            const ui = SwaggerUIBundle({
+                url: 'openapi.yaml',
+                dom_id: '#swagger-ui',
+                deepLinking: true,
+                presets: [
+                    SwaggerUIBundle.presets.apis,
+                    SwaggerUIStandalonePreset
+                ],
+                plugins: [
+                    SwaggerUIBundle.plugins.DownloadUrl
+                ],
+                layout: "StandaloneLayout",
+                validatorUrl: null,
+                tryItOutEnabled: true,
+                requestInterceptor: function(request) {
+                    // Add authorization header if API key is available
+                    const apiKey = localStorage.getItem('flint_api_key');
+                    if (apiKey) {
+                        request.headers.Authorization = 'Bearer ' + apiKey;
+                    }
+                    return request;
+                },
+                responseInterceptor: function(response) {
+                    return response;
+                }
+            });
+
+            // Add custom CSS for Flint branding
+            const style = document.createElement('style');
+            style.textContent = `
+                .swagger-ui .topbar { display: none; }
+                .swagger-ui .info .title {
+                    color: #1f2937;
+                    font-size: 2.5rem;
+                    font-weight: 700;
+                }
+                .swagger-ui .info .description {
+                    font-size: 1.1rem;
+                    line-height: 1.6;
+                }
+                .swagger-ui .scheme-container {
+                    background: #f8fafc;
+                    padding: 1rem;
+                    border-radius: 0.5rem;
+                    margin-bottom: 1rem;
+                }
+                .swagger-ui .auth-wrapper {
+                    background: #fef3c7;
+                    border: 1px solid #f59e0b;
+                    border-radius: 0.5rem;
+                    padding: 1rem;
+                    margin-bottom: 1rem;
+                }
+                .swagger-ui .auth-wrapper .auth-btn-wrapper {
+                    margin-top: 0.5rem;
+                }
+            `;
+            document.head.appendChild(style);
+
+            // Add API key input helper
+            const authWrapper = document.querySelector('.auth-wrapper');
+            if (authWrapper) {
+                const apiKeyHelper = document.createElement('div');
+                apiKeyHelper.innerHTML = `
+                    <p><strong>Flint API Key:</strong></p>
+                    <input type="text" id="api-key-input" placeholder="Enter your API key" style="width: 100%; padding: 0.5rem; margin-bottom: 0.5rem; border: 1px solid #d1d5db; border-radius: 0.25rem;">
+                    <button id="save-api-key" style="background: #3b82f6; color: white; border: none; padding: 0.5rem 1rem; border-radius: 0.25rem; cursor: pointer;">Save API Key</button>
+                    <p style="font-size: 0.875rem; color: #6b7280; margin-top: 0.5rem;">
+                        Get your API key by running: <code>flint api-key</code>
+                    </p>
+                `;
+                authWrapper.appendChild(apiKeyHelper);
+
+                // Load saved API key
+                const savedApiKey = localStorage.getItem('flint_api_key');
+                if (savedApiKey) {
+                    document.getElementById('api-key-input').value = savedApiKey;
+                }
+
+                // Save API key
+                document.getElementById('save-api-key').addEventListener('click', function() {
+                    const apiKey = document.getElementById('api-key-input').value;
+                    if (apiKey) {
+                        localStorage.setItem('flint_api_key', apiKey);
+                        alert('API key saved! All requests will now include authentication.');
+                    } else {
+                        alert('Please enter an API key.');
+                    }
+                });
+            }
+        };
+    </script>
+</body>
+</html>

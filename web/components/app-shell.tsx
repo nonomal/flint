@@ -70,7 +70,7 @@ export function AppShell({ children }: AppShellProps) {
   }
 
   return (
-    <div className="min-h-screen bg-background transition-colors duration-150">
+    <div className="h-screen overflow-hidden bg-background transition-colors duration-150">
       {/* Premium Header: Sticky, subtle blur, indigo accents */}
       <header className="sticky top-0 z-50 w-full border-b border-border/50 bg-background/95 backdrop-blur-md supports-[backdrop-filter]:bg-background/80 shadow-sm transition-all duration-200">
         <div className="flex h-14 sm:h-16 items-center justify-between px-3 sm:px-4 md:px-6">
@@ -85,13 +85,13 @@ export function AppShell({ children }: AppShellProps) {
               <Menu className="h-4 w-4 sm:h-5 sm:w-5" />
             </Button>
             {/* Logo Section: Chic, with subtle animation */}
-            <div className="flex items-center gap-2 sm:gap-3 animate-slide-up-fade">
+            <Link href="/" className="flex items-center gap-2 sm:gap-3 animate-slide-up-fade hover:opacity-80 transition-opacity duration-200">
               <img src="/flint.svg" alt="Flint" className="h-12 w-12 animate-pulse-subtle" />
               <div className="hidden xs:block">
                 <h1 className="text-xl sm:text-2xl font-display font-bold tracking-tight text-foreground">Flint</h1>
                 <p className="text-xs text-muted-foreground hidden sm:block">Premium Virtualization</p>
               </div>
-            </div>
+            </Link>
           </div>
 
           <div className="flex items-center gap-2 sm:gap-4">
@@ -211,8 +211,10 @@ export function AppShell({ children }: AppShellProps) {
 
         {/* Main Content: Full height, smooth scroll, premium padding */}
         <main className="flex-1 overflow-hidden transition-all duration-150">
-          <div className="h-[calc(100vh-3.5rem)] sm:h-[calc(100vh-4rem)] overflow-auto scrollbar-premium p-4 sm:p-6 lg:p-8 bg-surface-1">
-            {children}
+          <div className="h-[calc(100vh-3.5rem)] sm:h-[calc(100vh-4rem)] overflow-auto scrollbar-premium bg-surface-1">
+            <div className="pt-4 sm:pt-6 lg:pt-8 px-4 sm:px-6 lg:px-8 pb-2">
+              {children}
+            </div>
           </div>
         </main>
       </div>

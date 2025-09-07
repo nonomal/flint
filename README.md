@@ -38,7 +38,40 @@ Flint is a modern, self-contained KVM management tool built for developers, sysa
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ccheshirecat/flint/main/install.sh | sh
 ```
-*Auto-detects OS/arch, installs to `/usr/local/bin`, and you're ready in seconds.*
+*Auto-detects OS/arch, installs to `/usr/local/bin`, and prompts for web UI passphrase setup.*
+
+---
+
+### 🔐 Security & Authentication
+
+Flint implements a multi-layered security approach:
+
+**Web UI Security:**
+- **Passphrase Authentication**: Web interface requires a passphrase login
+- **Session-Based**: Secure HTTP-only cookies with 1-hour expiry
+- **No API Key Exposure**: Web UI never exposes API keys to browsers
+
+**API Security:**
+- **Bearer Token Authentication**: CLI and external tools use API keys
+- **Protected Endpoints**: All API endpoints require authentication
+- **Flexible Access**: Support for both session cookies and API keys
+
+**Authentication Flow:**
+```bash
+# First run - set passphrase
+flint serve
+# 🔐 No web UI passphrase set. Let's set one up for security.
+# Enter passphrase: ********
+
+# Web UI access
+# Visit http://your-server:5550 → Enter passphrase → Full access
+
+# CLI access (uses API key)
+flint vm list --all
+
+# External API access
+curl -H "Authorization: Bearer YOUR_API_KEY" http://localhost:5550/api/vms
+```
 
 ---
 
@@ -48,6 +81,7 @@ curl -fsSL https://raw.githubusercontent.com/ccheshirecat/flint/main/install.sh 
 -   ⚡ **Single Binary** — No containers, no XML hell. A sub-8MB binary is all you need.
 -   🛠️ **Powerful CLI & API** — Automate everything. If you can do it in the UI, you can do it from the command line or API.
 -   📦 **Frictionless Provisioning** — Native Cloud-Init support and a simple, snapshot-based template system.
+-   🔐 **Secure by Default** — Multi-layered authentication with passphrase protection.
 -   💪 **Non-Intrusive** — Flint is a tool that serves you. It's not a platform that locks you in.
 
 ---
@@ -56,35 +90,53 @@ curl -fsSL https://raw.githubusercontent.com/ccheshirecat/flint/main/install.sh 
 
 **1. Start the Server**
 ```bash
+# Interactive setup (recommended for first run)
+flint serve --set-passphrase
+
+# Or set passphrase directly
+flint serve --passphrase "your-secure-password"
+
+# Or use environment variable
+export FLINT_PASSPHRASE="your-secure-password"
 flint serve
 ```
-*   **Web UI:** `http://localhost:5550`
-*   **API:** `http://localhost:5550/api`
+*On first run, you'll be prompted to set a web UI passphrase for security.*
+*   **Web UI:** `http://localhost:5550` (requires passphrase login)
+*   **API:** `http://localhost:5550/api` (requires authentication)
 
-**2. Use the CLI**
+**2. Web UI Access**
+- Visit `http://localhost:5550`
+- Enter your passphrase to access the management interface
+- All API calls are automatically authenticated via session
+
+**3. CLI Usage**
 ```bash
-# List your VMs
-flint vm list --all
+# VM Management
+flint vm list                    # List all VMs
+flint vm launch my-server        # Create and start a VM
+flint vm ssh my-server          # SSH into a VM
 
-# Launch a new Ubuntu VM named 'web-01'
-flint launch ubuntu-24.04 --name web-01
+# Cloud Images
+flint image list                 # Browse cloud images
+flint image download ubuntu-24.04 # Download an image
 
-# SSH directly into your new VM
-flint ssh web-01
+# Networks & Storage
+flint network list               # List networks
+flint storage volume list default # List storage volumes
+```
 
-# Create a template from your configured VM
-flint snapshot create web-01 --tag baseline-setup
-
-# Launch a clone from your new template
-flint launch --from web-01 --name web-02
+**4. API Access (for external tools)**
+```bash
+# Get your API key (requires authentication)
+curl -H "Authorization: Bearer YOUR_API_KEY" http://localhost:5550/api/vms
 ```
 ---
 
 ### 📖 Full Documentation
 
-While Flint is designed to be intuitive, the full CLI and API documentation, including all commands and examples, is available at:
+Complete CLI commands, API reference, and advanced usage:
 
-➡️ **[DOCS.md](docs.md)**
+➡️ **[DOCS.md](DOCS.md)** - Complete CLI & API Documentation
 
 ---
 

@@ -1,0 +1,1088 @@
+openapi: 3.0.3
+info:
+  title: Flint KVM Management API
+  description: |
+    A modern, self-contained KVM management tool with a REST API for managing virtual machines.
+
+    ## Authentication
+    All API requests require authentication using a Bearer token:
+
+    ```
+    Authorization: Bearer YOUR_API_KEY
+    ```
+
+    Get your API key using: `flint api-key`
+
+    ## Rate Limiting
+    API requests are rate limited to 100 requests per minute per IP address.
+  version: 1.0.0
+  contact:
+    name: Flint Support
+    url: https://github.com/ccheshirecat/flint
+
+servers:
+  - url: http://localhost:5550
+    description: Local development server
+  - url: https://your-domain.com
+    description: Production server
+
+security:
+  - bearerAuth: []
+
+paths:
+  /api/health:
+    get:
+      summary: Health check
+      description: Get the health status of the Flint service
+      security: []  # No authentication required for health check
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [healthy, unhealthy]
+                  timestamp:
+                    type: integer
+                    description: Unix timestamp
+                  version:
+                    type: string
+                  uptime_seconds:
+                    type: number
+                  checks:
+                    type: object
+                    properties:
+                      libvirt:
+                        type: object
+                        properties:
+                          healthy:
+                            type: boolean
+                          error:
+                            type: string
+                      host_status:
+                        type: object
+                        properties:
+                          healthy:
+                            type: boolean
+                          error:
+                            type: string
+                      host_resources:
+                        type: object
+                        properties:
+                          healthy:
+                            type: boolean
+                          error:
+                            type: string
+                      host:
+                        type: object
+                        properties:
+                          hostname:
+                            type: string
+                          hypervisor_version:
+                            type: string
+                          total_vms:
+                            type: integer
+                          running_vms:
+                            type: integer
+                      resources:
+                        type: object
+                        properties:
+                          total_memory_kb:
+                            type: integer
+                          free_memory_kb:
+                            type: integer
+                          cpu_cores:
+                            type: integer
+                          storage_total_b:
+                            type: integer
+                          storage_used_b:
+                            type: integer
+        '503':
+          description: Service is unhealthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: unhealthy
+                  timestamp:
+                    type: integer
+                  version:
+                    type: string
+
+  /api/vms:
+    get:
+      summary: List virtual machines
+      description: Get a list of all virtual machines with their summary information
+      responses:
+        '200':
+          description: List of virtual machines
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/VMSummary'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    post:
+      summary: Create a new virtual machine
+      description: Create a new virtual machine from an image or template
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VMCreationRequest'
+            example:
+              name: "web-server-01"
+              memoryMB: 2048
+              vcpus: 2
+              imageName: "ubuntu-24.04"
+              imageType: "template"
+              diskSizeGB: 20
+              startOnCreate: true
+              networkName: "default"
+      responses:
+        '200':
+          description: Virtual machine created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VMDetailed'
+        '400':
+          description: Invalid request data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/vms/from-template:
+    post:
+      summary: Create VM from template
+      description: Create a new virtual machine from an existing template
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - templateId
+                - name
+              properties:
+                templateId:
+                  type: string
+                  description: UUID of the template VM
+                name:
+                  type: string
+                  description: Name for the new VM
+      responses:
+        '200':
+          description: VM created from template
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  uuid:
+                    type: string
+                  name:
+                    type: string
+                  message:
+                    type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/vms/{uuid}:
+    get:
+      summary: Get VM details
+      description: Get detailed information about a specific virtual machine
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: UUID of the virtual machine
+      responses:
+        '200':
+          description: Virtual machine details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VMDetailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Virtual machine not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    delete:
+      summary: Delete virtual machine
+      description: Delete a virtual machine and optionally its storage
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: UUID of the virtual machine
+      responses:
+        '200':
+          description: Virtual machine deleted successfully
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Virtual machine not found
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/vms/{uuid}/action:
+    post:
+      summary: Perform VM action
+      description: Perform an action on a virtual machine (start, stop, reboot, etc.)
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: UUID of the virtual machine
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - action
+              properties:
+                action:
+                  type: string
+                  enum: [start, stop, reboot, pause, resume, force-stop]
+                  description: Action to perform
+            example:
+              action: "start"
+      responses:
+        '200':
+          description: Action performed successfully
+        '400':
+          description: Invalid action
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Virtual machine not found
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/vms/{uuid}/serial-console:
+    get:
+      summary: Get serial console WebSocket info
+      description: Get WebSocket connection information for serial console access
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: UUID of the virtual machine
+      responses:
+        '200':
+          description: WebSocket connection information
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  websocket_path:
+                    type: string
+                  token:
+                    type: string
+                    description: Authentication token for WebSocket connection
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Virtual machine not found
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/vms/{uuid}/snapshots:
+    get:
+      summary: List VM snapshots
+      description: Get a list of snapshots for a virtual machine
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: UUID of the virtual machine
+      responses:
+        '200':
+          description: List of snapshots
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Snapshot'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Virtual machine not found
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    post:
+      summary: Create VM snapshot
+      description: Create a new snapshot of a virtual machine
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: UUID of the virtual machine
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                  description: Name of the snapshot
+                description:
+                  type: string
+                  description: Optional description of the snapshot
+            example:
+              name: "before-upgrade"
+              description: "Snapshot before system upgrade"
+      responses:
+        '200':
+          description: Snapshot created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Snapshot'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Virtual machine not found
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/vms/{uuid}/snapshots/{snapshotName}/revert:
+    post:
+      summary: Revert to snapshot
+      description: Revert a virtual machine to a specific snapshot
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: UUID of the virtual machine
+        - name: snapshotName
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Name of the snapshot
+      responses:
+        '200':
+          description: Reverted to snapshot successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Revert action initiated."
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Virtual machine or snapshot not found
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/vms/{uuid}/snapshots/{snapshotName}:
+    delete:
+      summary: Delete snapshot
+      description: Delete a snapshot of a virtual machine
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: UUID of the virtual machine
+        - name: snapshotName
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Name of the snapshot
+      responses:
+        '204':
+          description: Snapshot deleted successfully
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Virtual machine or snapshot not found
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/vm-templates:
+    get:
+      summary: List VM templates
+      description: Get a list of virtual machines that can be used as templates
+      responses:
+        '200':
+          description: List of VM templates
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                    name:
+                      type: string
+                    description:
+                      type: string
+                    sourceVM:
+                      type: string
+                    vcpus:
+                      type: integer
+                    memory:
+                      type: integer
+                    diskSize:
+                      type: integer
+                    createdAt:
+                      type: string
+                      format: date-time
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/host/status:
+    get:
+      summary: Get host status
+      description: Get basic host system status and VM counts
+      responses:
+        '200':
+          description: Host status information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HostStatus'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/host/resources:
+    get:
+      summary: Get host resources
+      description: Get detailed host resource usage information
+      responses:
+        '200':
+          description: Host resource information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HostResources'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/storage-pools:
+    get:
+      summary: List storage pools
+      description: Get a list of all libvirt storage pools
+      responses:
+        '200':
+          description: List of storage pools
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/StoragePool'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/storage-pools/{poolName}/volumes:
+    get:
+      summary: List storage volumes
+      description: Get a list of volumes in a specific storage pool
+      parameters:
+        - name: poolName
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Name of the storage pool
+      responses:
+        '200':
+          description: List of storage volumes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Volume'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Storage pool not found
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/networks:
+    get:
+      summary: List networks
+      description: Get a list of all libvirt networks
+      responses:
+        '200':
+          description: List of networks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Network'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/images:
+    get:
+      summary: List images
+      description: Get a list of all available VM images (ISOs and templates)
+      responses:
+        '200':
+          description: List of images
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Image'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/images/import-from-path:
+    post:
+      summary: Import image from path
+      description: Import a VM image from a file path on the host system
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - path
+              properties:
+                path:
+                  type: string
+                  description: Absolute path to the image file
+            example:
+              path: "/var/lib/libvirt/images/ubuntu-24.04.qcow2"
+      responses:
+        '200':
+          description: Image imported successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Image'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/images/download:
+    post:
+      summary: Download image
+      description: Download a VM image from a URL
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - url
+              properties:
+                url:
+                  type: string
+                  format: uri
+                  description: URL to download the image from
+                name:
+                  type: string
+                  description: Optional name for the downloaded image
+            example:
+              url: "https://cloud-images.ubuntu.com/focal/current/focal-server-cloudimg-amd64.img"
+              name: "ubuntu-20.04-cloud"
+      responses:
+        '200':
+          description: Image downloaded and imported successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Image'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/activity:
+    get:
+      summary: Get activity log
+      description: Get the recent activity log entries
+      responses:
+        '200':
+          description: List of activity log entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ActivityEvent'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: API Key
+
+  schemas:
+    VMSummary:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Name of the virtual machine
+        uuid:
+          type: string
+          format: uuid
+          description: UUID of the virtual machine
+        state:
+          type: string
+          description: Current state of the VM
+          enum: [running, paused, shutoff, crashed, dying]
+        memory_kb:
+          type: integer
+          description: Memory allocated to the VM in KB
+        vcpus:
+          type: integer
+          description: Number of virtual CPUs
+        cpu_percent:
+          type: number
+          description: CPU usage percentage
+        uptime_sec:
+          type: integer
+          description: VM uptime in seconds
+        os_info:
+          type: string
+          description: Operating system information
+        ip_addresses:
+          type: array
+          items:
+            type: string
+          description: IP addresses assigned to the VM
+
+    VMDetailed:
+      allOf:
+        - $ref: '#/components/schemas/VMSummary'
+        - type: object
+          properties:
+            max_memory_kb:
+              type: integer
+              description: Maximum memory that can be allocated
+            xml:
+              type: string
+              description: Raw libvirt XML configuration
+            disks:
+              type: array
+              items:
+                $ref: '#/components/schemas/Disk'
+            nics:
+              type: array
+              items:
+                $ref: '#/components/schemas/NIC'
+            os:
+              type: string
+              description: Operating system type
+
+    Disk:
+      type: object
+      properties:
+        source_path:
+          type: string
+          description: Path to the disk image
+        target_dev:
+          type: string
+          description: Target device name (e.g., vda, vdb)
+        device:
+          type: string
+          description: Device type
+        bus:
+          type: string
+          description: Bus type
+
+    NIC:
+      type: object
+      properties:
+        mac:
+          type: string
+          description: MAC address
+        source:
+          type: string
+          description: Network source
+        model:
+          type: string
+          description: Network interface model
+
+    VMCreationRequest:
+      type: object
+      required:
+        - name
+        - memoryMB
+        - vcpus
+        - imageName
+      properties:
+        name:
+          type: string
+          description: Name of the new VM
+          minLength: 1
+          maxLength: 64
+        memoryMB:
+          type: integer
+          description: Memory in MB
+          minimum: 128
+          maximum: 524288
+        vcpus:
+          type: integer
+          description: Number of virtual CPUs
+          minimum: 1
+          maximum: 128
+        imageName:
+          type: string
+          description: Name of the source image
+        imageType:
+          type: string
+          description: Type of image
+          enum: [iso, template]
+        startOnCreate:
+          type: boolean
+          description: Whether to start the VM after creation
+          default: false
+        networkName:
+          type: string
+          description: Name of the network to connect to
+          default: "default"
+        diskSizeGB:
+          type: integer
+          description: Size of the disk in GB
+          minimum: 1
+          maximum: 10000
+        cloudInit:
+          $ref: '#/components/schemas/CloudInitConfig'
+
+    CloudInitConfig:
+      type: object
+      properties:
+        commonFields:
+          type: object
+          properties:
+            hostname:
+              type: string
+              maxLength: 64
+            username:
+              type: string
+              maxLength: 32
+            password:
+              type: string
+            packages:
+              type: array
+              items:
+                type: string
+                maxLength: 100
+              maxItems: 50
+            sshKeys:
+              type: string
+            networkConfig:
+              $ref: '#/components/schemas/CloudInitNetworkConfig'
+
+    CloudInitNetworkConfig:
+      type: object
+      properties:
+        useDHCP:
+          type: boolean
+          default: true
+        ipAddress:
+          type: string
+        prefix:
+          type: integer
+          minimum: 1
+          maximum: 32
+        gateway:
+          type: string
+        dnsServers:
+          type: array
+          items:
+            type: string
+
+    Snapshot:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Name of the snapshot
+        state:
+          type: string
+          description: State of the snapshot
+        creation_ts:
+          type: integer
+          description: Creation timestamp (Unix)
+        description:
+          type: string
+          description: Description of the snapshot
+
+    HostStatus:
+      type: object
+      properties:
+        hostname:
+          type: string
+        hypervisor_version:
+          type: string
+        total_vms:
+          type: integer
+        running_vms:
+          type: integer
+        paused_vms:
+          type: integer
+        shutoff_vms:
+          type: integer
+        health_checks:
+          type: array
+          items:
+            type: object
+            properties:
+              type:
+                type: string
+                enum: [warning, info, error]
+              message:
+                type: string
+
+    HostResources:
+      type: object
+      properties:
+        total_memory_kb:
+          type: integer
+          description: Total system memory in KB
+        free_memory_kb:
+          type: integer
+          description: Free system memory in KB
+        cpu_cores:
+          type: integer
+          description: Number of CPU cores
+        storage_total_b:
+          type: integer
+          description: Total storage in bytes
+        storage_used_b:
+          type: integer
+          description: Used storage in bytes
+        active_interfaces:
+          type: integer
+          description: Number of active network interfaces
+
+    StoragePool:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Name of the storage pool
+        state:
+          type: string
+          description: State of the storage pool
+        capacity_b:
+          type: integer
+          description: Total capacity in bytes
+        allocation_b:
+          type: integer
+          description: Allocated space in bytes
+
+    Volume:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Name of the volume
+        path:
+          type: string
+          description: Path to the volume
+        capacity_b:
+          type: integer
+          description: Capacity in bytes
+
+    Network:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Name of the network
+        uuid:
+          type: string
+          format: uuid
+          description: UUID of the network
+        is_active:
+          type: boolean
+          description: Whether the network is active
+        is_persistent:
+          type: boolean
+          description: Whether the network is persistent
+        bridge:
+          type: string
+          description: Bridge name
+
+    Image:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Unique identifier of the image
+        name:
+          type: string
+          description: Name of the image
+        pool:
+          type: string
+          description: Storage pool containing the image
+        path:
+          type: string
+          description: Path to the image file
+        size_b:
+          type: integer
+          description: Size of the image in bytes
+        type:
+          type: string
+          description: Type of image
+          enum: [iso, template]
+
+    ActivityEvent:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Unique identifier of the event
+        timestamp:
+          type: integer
+          description: Event timestamp (Unix)
+        action:
+          type: string
+          description: Action that was performed
+        target:
+          type: string
+          description: Target of the action
+        status:
+          type: string
+          description: Status of the action
+          enum: [Success, Error, Warning]
+        message:
+          type: string
+          description: Detailed message about the action
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Error message
+
+  responses:
+    BadRequest:
+      description: Bad request - invalid input data
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    Unauthorized:
+      description: Authentication required
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "Authorization header required"
+
+    InternalServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "Internal server error"

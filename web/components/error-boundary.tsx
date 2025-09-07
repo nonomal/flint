@@ -2,6 +2,7 @@
 
 import React from "react"
 import { Button } from "@/components/ui/button"
+import { refreshPage } from "@/lib/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { AlertTriangle, RefreshCw } from "lucide-react"
 
@@ -80,7 +81,7 @@ function DefaultErrorFallback({ error, resetError }: DefaultErrorFallbackProps) 
             </Button>
             <Button
               variant="outline"
-              onClick={() => window.location.reload()}
+              onClick={() => refreshPage()}
               className="flex-1"
             >
               Reload Page

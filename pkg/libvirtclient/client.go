@@ -49,6 +49,17 @@ type ClientInterface interface {
 	AttachNetworkInterfaceToVM(uuidStr string, networkName string, model string) error
 	GetActivity() []core.ActivityEvent
 	Close() error
+	
+	// Guest agent operations
+	GetGuestAgentStatus(vmName string) (string, error)
+	CheckGuestAgentStatus(uuidStr string) (bool, error)
+	InstallGuestAgent(uuidStr string) error
+	
+	// Storage operations
+	UpdateVolume(poolName string, volumeName string, config core.VolumeConfig) error
+	
+	// Network operations  
+	UpdateNetwork(name string, bridgeName string) error
 }
 
 // Client holds the libvirt connection.

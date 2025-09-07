@@ -1,6 +1,7 @@
 package libvirtclient
 
 import (
+	"encoding/json"
 	"encoding/xml"
 	"fmt"
 	"os"
@@ -12,6 +13,16 @@ import (
 	"github.com/ccheshirecat/flint/pkg/core"
 	libvirt "github.com/libvirt/libvirt-go"
 )
+
+// GuestAgentInfo holds information retrieved from qemu guest agent
+type GuestAgentInfo struct {
+	OSName       string    `json:"os_name"`
+	OSVersion    string    `json:"os_version"`
+	IPAddresses  []string  `json:"ip_addresses"`
+	Hostname     string    `json:"hostname"`
+	Available    bool      `json:"available"`
+	LastSeen     time.Time `json:"last_seen"`
+}
 
 // helper to map libvirt state to string
 func libvirtStateToString(s libvirt.DomainState) string {
@@ -76,19 +87,24 @@ func (c *Client) GetVMSummaries() ([]core.VM_Summary, error) {
 			}
 			s.info1 = *info
 
-			// For now, we'll populate OS info from XML and leave IP addresses empty
-			// IP addresses require qemu-guest-agent running in the VM
 			xmlDesc, err := s.dom.GetXMLDesc(0)
 			if err == nil {
-				// Simple OS detection from XML
-				if strings.Contains(xmlDesc, "ubuntu") {
-					s.osInfo = "Ubuntu"
-				} else if strings.Contains(xmlDesc, "centos") || strings.Contains(xmlDesc, "rhel") {
-					s.osInfo = "CentOS/RHEL"
-				} else if strings.Contains(xmlDesc, "windows") {
-					s.osInfo = "Windows"
+				// Try guest agent first, fallback to XML detection
+				guestInfo, guestAgentAvailable := c.getGuestAgentInfo(&s.dom)
+				if guestAgentAvailable && guestInfo.OSName != "" {
+					s.osInfo = guestInfo.OSName
+					s.ipAddresses = guestInfo.IPAddresses
 				} else {
-					s.osInfo = "Unknown"
+					// Fallback to simple OS detection from XML
+					if strings.Contains(xmlDesc, "ubuntu") {
+						s.osInfo = "Ubuntu"
+					} else if strings.Contains(xmlDesc, "centos") || strings.Contains(xmlDesc, "rhel") {
+						s.osInfo = "CentOS/RHEL"
+					} else if strings.Contains(xmlDesc, "windows") {
+						s.osInfo = "Windows"
+					} else {
+						s.osInfo = "Unknown"
+					}
 				}
 			}
 		}(s)
@@ -428,6 +444,131 @@ func (c *Client) GetVMPerformance(uuidStr string) (core.PerformanceSample, error
 	return sample, nil
 }
 
+// getGuestAgentInfo attempts to get information from qemu guest agent
+func (c *Client) getGuestAgentInfo(dom *libvirt.Domain) (GuestAgentInfo, bool) {
+	var info GuestAgentInfo
+	
+	// Check if guest agent is available by trying to ping it
+	_, err := dom.QemuAgentCommand(`{"execute":"guest-ping"}`, libvirt.DOMAIN_QEMU_AGENT_COMMAND_DEFAULT, 0)
+	if err != nil {
+		return info, false
+	}
+	
+	info.Available = true
+	info.LastSeen = time.Now()
+	
+	// Get OS information
+	osInfoCmd := `{"execute":"guest-get-osinfo"}`
+	osResult, err := dom.QemuAgentCommand(osInfoCmd, libvirt.DOMAIN_QEMU_AGENT_COMMAND_DEFAULT, 0)
+	if err == nil {
+		var osData struct {
+			Return struct {
+				Name    string `json:"name"`
+				Version string `json:"version"`
+			} `json:"return"`
+		}
+		if json.Unmarshal([]byte(osResult), &osData) == nil {
+			info.OSName = osData.Return.Name
+			info.OSVersion = osData.Return.Version
+		}
+	}
+	
+	// Get network interfaces and IP addresses
+	netCmd := `{"execute":"guest-network-get-interfaces"}`
+	netResult, err := dom.QemuAgentCommand(netCmd, libvirt.DOMAIN_QEMU_AGENT_COMMAND_DEFAULT, 0)
+	if err == nil {
+		var netData struct {
+			Return []struct {
+				Name      string `json:"name"`
+				IPAddrs   []struct {
+					IPAddr string `json:"ip-address"`
+					Type   string `json:"ip-address-type"`
+				} `json:"ip-addresses"`
+			} `json:"return"`
+		}
+		if json.Unmarshal([]byte(netResult), &netData) == nil {
+			for _, iface := range netData.Return {
+				for _, addr := range iface.IPAddrs {
+					// Skip loopback and link-local addresses
+					if addr.IPAddr != "127.0.0.1" && addr.IPAddr != "::1" && 
+					   !strings.HasPrefix(addr.IPAddr, "169.254.") &&
+					   !strings.HasPrefix(addr.IPAddr, "fe80:") {
+						info.IPAddresses = append(info.IPAddresses, addr.IPAddr)
+					}
+				}
+			}
+		}
+	}
+	
+	// Get hostname
+	hostnameCmd := `{"execute":"guest-get-host-name"}`
+	hostnameResult, err := dom.QemuAgentCommand(hostnameCmd, libvirt.DOMAIN_QEMU_AGENT_COMMAND_DEFAULT, 0)
+	if err == nil {
+		var hostnameData struct {
+			Return struct {
+				HostName string `json:"host-name"`
+			} `json:"return"`
+		}
+		if json.Unmarshal([]byte(hostnameResult), &hostnameData) == nil {
+			info.Hostname = hostnameData.Return.HostName
+		}
+	}
+	
+	return info, true
+}
+
+// CheckGuestAgentStatus checks if guest agent is installed and running
+func (c *Client) CheckGuestAgentStatus(uuidStr string) (bool, error) {
+	dom, err := c.conn.LookupDomainByUUIDString(uuidStr)
+	if err != nil {
+		return false, fmt.Errorf("lookup domain: %w", err)
+	}
+	defer dom.Free()
+	
+	_, available := c.getGuestAgentInfo(dom)
+	return available, nil
+}
+
+// InstallGuestAgent attempts to install guest agent via common package managers
+func (c *Client) InstallGuestAgent(uuidStr string) error {
+	dom, err := c.conn.LookupDomainByUUIDString(uuidStr)
+	if err != nil {
+		return fmt.Errorf("lookup domain: %w", err)
+	}
+	defer dom.Free()
+	
+	// Check if domain is running
+	state, _, err := dom.GetState()
+	if err != nil {
+		return fmt.Errorf("get domain state: %w", err)
+	}
+	
+	if state != libvirt.DOMAIN_RUNNING {
+		return fmt.Errorf("VM must be running to install guest agent")
+	}
+	
+	// Try to execute installation commands via guest agent
+	// If guest agent is not available, this will fail gracefully
+	installCommands := []string{
+		// Ubuntu/Debian
+		`{"execute":"guest-exec", "arguments":{"path":"/usr/bin/apt", "arg":["update"], "capture-output":true}}`,
+		`{"execute":"guest-exec", "arguments":{"path":"/usr/bin/apt", "arg":["install", "-y", "qemu-guest-agent"], "capture-output":true}}`,
+		// CentOS/RHEL/Fedora
+		`{"execute":"guest-exec", "arguments":{"path":"/usr/bin/yum", "arg":["install", "-y", "qemu-guest-agent"], "capture-output":true}}`,
+		`{"execute":"guest-exec", "arguments":{"path":"/usr/bin/dnf", "arg":["install", "-y", "qemu-guest-agent"], "capture-output":true}}`,
+		// Enable and start service
+		`{"execute":"guest-exec", "arguments":{"path":"/usr/bin/systemctl", "arg":["enable", "qemu-guest-agent"], "capture-output":true}}`,
+		`{"execute":"guest-exec", "arguments":{"path":"/usr/bin/systemctl", "arg":["start", "qemu-guest-agent"], "capture-output":true}}`,
+	}
+	
+	for _, cmd := range installCommands {
+		// Try each command, ignore errors as not all will work on every system
+		dom.QemuAgentCommand(cmd, libvirt.DOMAIN_QEMU_AGENT_COMMAND_DEFAULT, 0)
+	}
+	
+	return nil
+}
+
 // AttachDiskToVM attaches a disk volume to a running VM
 func (c *Client) AttachDiskToVM(uuidStr string, volumePath string, targetDev string) error {
 	dom, err := c.conn.LookupDomainByUUIDString(uuidStr)
@@ -496,4 +637,66 @@ func isFileInKnownStoragePool(filePath string) bool {
 	// For example, you might check for other libvirt storage pools
 
 	return false
+}
+
+// GetGuestAgentStatus gets guest agent status by VM name
+func (c *Client) GetGuestAgentStatus(vmName string) (string, error) {
+	dom, err := c.conn.LookupDomainByName(vmName)
+	if err != nil {
+		return "", fmt.Errorf("lookup domain: %w", err)
+	}
+	defer dom.Free()
+	
+	_, available := c.getGuestAgentInfo(dom)
+	if available {
+		return "Available", nil
+	}
+	return "Not Available", nil
+}
+
+// StartVM starts a VM by name
+func (c *Client) StartVM(name string) error {
+	dom, err := c.conn.LookupDomainByName(name)
+	if err != nil {
+		return fmt.Errorf("lookup domain: %w", err)
+	}
+	defer dom.Free()
+	
+	return dom.Create()
+}
+
+// StopVM stops a VM gracefully by name
+func (c *Client) StopVM(name string) error {
+	dom, err := c.conn.LookupDomainByName(name)
+	if err != nil {
+		return fmt.Errorf("lookup domain: %w", err)
+	}
+	defer dom.Free()
+	
+	return dom.Shutdown()
+}
+
+// ForceStopVM force stops a VM by name
+func (c *Client) ForceStopVM(name string) error {
+	dom, err := c.conn.LookupDomainByName(name)
+	if err != nil {
+		return fmt.Errorf("lookup domain: %w", err)
+	}
+	defer dom.Free()
+	
+	return dom.Destroy()
+}
+
+// RestartVM restarts a VM by name
+func (c *Client) RestartVM(name string, force bool) error {
+	dom, err := c.conn.LookupDomainByName(name)
+	if err != nil {
+		return fmt.Errorf("lookup domain: %w", err)
+	}
+	defer dom.Free()
+	
+	if force {
+		return dom.Reset(0)
+	}
+	return dom.Reboot(0)
 }

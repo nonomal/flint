@@ -1,0 +1,22 @@
+{
+  "server": {
+    "host": "0.0.0.0",
+    "port": 5550,
+    "read_timeout": 30,
+    "write_timeout": 30
+  },
+  "security": {
+    "rate_limit_requests": 100,
+    "rate_limit_burst": 20
+  },
+  "libvirt": {
+    "uri": "qemu:///system",
+    "iso_pool": "isos",
+    "template_pool": "templates",
+    "image_pool_path": "/var/lib/flint/images"
+  },
+  "logging": {
+    "level": "INFO",
+    "format": "json"
+  }
+}

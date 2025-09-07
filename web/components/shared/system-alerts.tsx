@@ -1,8 +1,11 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { AlertTriangle, CheckCircle, Cpu, MemoryStick, HardDrive, AlertCircle } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { AlertTriangle, CheckCircle, Cpu, MemoryStick, HardDrive, AlertCircle, X } from "lucide-react"
 import { HostResources } from "@/lib/api"
+import { useState } from "react"
 
 interface Alert {
+  id: string
   type: "warning" | "info" | "error" | "success"
   message: string
   time: string
@@ -16,6 +19,12 @@ interface SystemAlertsProps {
 }
 
 export function SystemAlerts({ alerts, hostResources }: SystemAlertsProps) {
+  const [dismissedAlerts, setDismissedAlerts] = useState<Set<string>>(new Set())
+
+  const handleDismissAlert = (alertId: string) => {
+    setDismissedAlerts(prev => new Set([...prev, alertId]))
+  }
+
   // Generate dynamic alerts based on resource usage
   const generateResourceAlerts = (): Alert[] => {
     if (!hostResources) return []
@@ -23,10 +32,18 @@ export function SystemAlerts({ alerts, hostResources }: SystemAlertsProps) {
     const resourceAlerts: Alert[] = []
     const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 
-    // CPU Usage Alert
+    // CPU Usage Alert - simplified without VM data
     if (hostResources.cpu_cores > 0) {
-      // This is a placeholder since we don't have CPU usage percentage directly
-      // In a real implementation, we would calculate this from VM data
+      // For now, just show basic CPU info - VM-based calculation would need VM data prop
+      const cpuInfo = `${hostResources.cpu_cores} CPU cores available`
+      resourceAlerts.push({
+        id: `cpu-info-${Date.now()}`,
+        type: "info",
+        message: cpuInfo,
+        time: now,
+        priority: 4,
+        category: "cpu"
+      })
     }
 
     // Memory Usage Alert
@@ -36,6 +53,7 @@ export function SystemAlerts({ alerts, hostResources }: SystemAlertsProps) {
     
     if (memoryUsagePercent > 90) {
       resourceAlerts.push({
+        id: `memory-critical-${Date.now()}`,
         type: "error",
         message: `Critical: Host memory usage is at ${memoryUsagePercent.toFixed(1)}%`,
         time: now,
@@ -44,6 +62,7 @@ export function SystemAlerts({ alerts, hostResources }: SystemAlertsProps) {
       })
     } else if (memoryUsagePercent > 80) {
       resourceAlerts.push({
+        id: `memory-warning-${Date.now()}`,
         type: "warning",
         message: `High memory usage: ${memoryUsagePercent.toFixed(1)}% of total memory in use`,
         time: now,
@@ -59,6 +78,7 @@ export function SystemAlerts({ alerts, hostResources }: SystemAlertsProps) {
     
     if (storageUsagePercent > 95) {
       resourceAlerts.push({
+        id: `storage-critical-${Date.now()}`,
         type: "error",
         message: `Critical: Storage usage is at ${storageUsagePercent.toFixed(1)}%`,
         time: now,
@@ -67,8 +87,9 @@ export function SystemAlerts({ alerts, hostResources }: SystemAlertsProps) {
       })
     } else if (storageUsagePercent > 85) {
       resourceAlerts.push({
+        id: `storage-warning-${Date.now()}`,
         type: "warning",
-        message: `High storage usage: ${storageUsagePercent.toFixed(1)}% of total storage in use`,
+        message: `High storage usage: ${storageUsagePercent.toFixed(1)}% of total storage used`,
         time: now,
         priority: 2,
         category: "storage"
@@ -129,13 +150,29 @@ export function SystemAlerts({ alerts, hostResources }: SystemAlertsProps) {
     }
   }
 
-  // Combine static alerts with dynamic resource alerts
-  const allAlerts = [...alerts, ...generateResourceAlerts()]
+  // Combine static alerts with dynamic resource alerts, but deduplicate storage alerts
+  const resourceAlerts = generateResourceAlerts()
+  const backendAlerts = alerts.map(alert => ({
+    ...alert,
+    id: alert.id || `backend-${alert.message.slice(0, 20)}-${Date.now()}` // Ensure backend alerts have IDs
+  }))
   
-  // Sort by priority (highest first) and limit to top 5
+  // Deduplicate storage alerts - prefer backend alerts over frontend ones
+  const hasBackendStorageAlert = backendAlerts.some(alert => 
+    alert.message.toLowerCase().includes('storage usage')
+  )
+  
+  const filteredResourceAlerts = hasBackendStorageAlert 
+    ? resourceAlerts.filter(alert => alert.category !== 'storage')
+    : resourceAlerts
+  
+  const allAlerts = [...backendAlerts, ...filteredResourceAlerts]
+  
+  // Filter out dismissed alerts, sort by priority (highest first) and limit to top 4
   const sortedAlerts = allAlerts
+    .filter(alert => !dismissedAlerts.has(alert.id))
     .sort((a, b) => a.priority - b.priority)
-    .slice(0, 5)
+    .slice(0, 4)
 
   if (sortedAlerts.length === 0) return null
 
@@ -147,25 +184,33 @@ export function SystemAlerts({ alerts, hostResources }: SystemAlertsProps) {
           System Alerts
         </CardTitle>
       </CardHeader>
-      <CardContent className="py-2 px-3">
-        <div className="space-y-2">
-          {sortedAlerts.map((alert, index) => (
+      <CardContent className="py-1 px-3">
+        <div className="space-y-1">
+          {sortedAlerts.map((alert) => (
             <div 
-              key={index} 
-              className={`flex items-start justify-between rounded bg-muted/50 p-3 border-l-4 ${getAlertBorderClass(alert.type)}`}
+              key={alert.id} 
+              className={`flex items-center justify-between rounded bg-muted/30 p-2 border-l-2 ${getAlertBorderClass(alert.type)}`}
             >
-              <div className="flex items-start gap-2">
+              <div className="flex items-center gap-2 flex-1 min-w-0">
                 {getAlertIcon(alert.type, alert.category)}
-                <div className="flex-1">
-                  <span className="text-sm">{alert.message}</span>
-                  <div className="flex items-center gap-2 mt-1">
+                <div className="flex-1 min-w-0">
+                  <span className="text-xs leading-tight block truncate">{alert.message}</span>
+                  <div className="flex items-center gap-2 mt-0.5">
                     <span className="text-xs text-muted-foreground">{alert.time}</span>
-                    <span className="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground capitalize">
+                    <span className="text-xs px-1 py-0.5 rounded bg-muted/50 text-muted-foreground capitalize">
                       {alert.category}
                     </span>
                   </div>
                 </div>
               </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-5 w-5 p-0 hover:bg-muted-foreground/20 flex-shrink-0 ml-1"
+                onClick={() => handleDismissAlert(alert.id)}
+              >
+                <X className="h-2.5 w-2.5" />
+              </Button>
             </div>
           ))}
         </div>
