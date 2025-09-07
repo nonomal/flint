@@ -3,11 +3,11 @@ package server
 import (
 	"crypto/rand"
 	"embed"
-	"io/fs"
 	"encoding/hex"
 	"github.com/ccheshirecat/flint/pkg/libvirtclient"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"io/fs"
 	"net/http"
 )
 
@@ -50,6 +50,8 @@ func (s *Server) setupRoutes() {
 		r.Get("/vm-templates", s.handleGetVMTemplates())
 		r.Post("/vm-templates", s.handleCreateVMTemplate())
 		r.Get("/vms/{uuid}/performance", s.handleGetVMPerformance())
+		r.Post("/vms/{uuid}/attach-disk", s.handleAttachDiskToVM())
+		r.Post("/vms/{uuid}/attach-network", s.handleAttachNetworkInterfaceToVM())
 		r.Get("/host/status", s.handleGetHostStatus())
 		r.Get("/host/resources", s.handleGetHostResources())
 		r.Get("/storage-pools", s.handleGetStoragePools())
@@ -79,6 +81,7 @@ func (s *Server) Start(addr string) error {
 	}
 	return http.ListenAndServe(addr, s.router)
 }
+
 // validateAuthToken validates an authentication token
 
 func (s *Server) validateAuthToken(token string) bool {

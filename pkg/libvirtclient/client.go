@@ -45,6 +45,8 @@ type ClientInterface interface {
 	GetVMSerialConsolePath(uuidStr string) (string, error)
 	GetDomainByName(name string) (*libvirt.Domain, error)
 	NewStream(flags libvirt.StreamFlags) (*libvirt.Stream, error)
+	AttachDiskToVM(uuidStr string, volumePath string, targetDev string) error
+	AttachNetworkInterfaceToVM(uuidStr string, networkName string, model string) error
 	GetActivity() []core.ActivityEvent
 	Close() error
 }

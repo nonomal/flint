@@ -122,8 +122,26 @@ export function DashboardView() {
 
   const handleVMAction = async (action: string, vmId: string) => {
     if (action === "console") {
-      // Open console in a new tab
-      window.open(`/vms/console?id=${vmId}`, '_blank');
+      // Check if console endpoint exists first
+      fetch(`/api/vms/${vmId}/serial-console`)
+        .then(response => {
+          if (response.ok) {
+            window.open(`/vms/console?id=${vmId}`, '_blank');
+          } else {
+            toast({
+              title: "Console Not Available",
+              description: "Serial console is not available for this VM. Make sure the VM is running.",
+              variant: "destructive",
+            })
+          }
+        })
+        .catch(() => {
+          toast({
+            title: "Error",
+            description: "Failed to check console availability. The VM might not be running.",
+            variant: "destructive",
+          })
+        })
       return;
     }
 

@@ -428,6 +428,57 @@ func (c *Client) GetVMPerformance(uuidStr string) (core.PerformanceSample, error
 	return sample, nil
 }
 
+// AttachDiskToVM attaches a disk volume to a running VM
+func (c *Client) AttachDiskToVM(uuidStr string, volumePath string, targetDev string) error {
+	dom, err := c.conn.LookupDomainByUUIDString(uuidStr)
+	if err != nil {
+		return fmt.Errorf("lookup domain: %w", err)
+	}
+	defer dom.Free()
+
+	name, _ := dom.GetName()
+
+	// Create the attachment XML for a disk
+	attachXML := fmt.Sprintf(`<disk type="file" device="disk">
+      <driver name="qemu" type="qcow2"/>
+      <source file="%s"/>
+      <target dev="%s" bus="virtio"/>
+    </disk>`, volumePath, targetDev)
+
+	// Attach the disk
+	if err := dom.AttachDevice(attachXML); err != nil {
+		return fmt.Errorf("failed to attach disk: %w", err)
+	}
+
+	c.logger.Add("Disk Attached", name, "Success", fmt.Sprintf("Disk %s attached as %s", volumePath, targetDev))
+	return nil
+}
+
+// AttachNetworkInterfaceToVM attaches a network interface to a running VM
+func (c *Client) AttachNetworkInterfaceToVM(uuidStr string, networkName string, model string) error {
+	dom, err := c.conn.LookupDomainByUUIDString(uuidStr)
+	if err != nil {
+		return fmt.Errorf("lookup domain: %w", err)
+	}
+	defer dom.Free()
+
+	name, _ := dom.GetName()
+
+	// Create the attachment XML for a network interface
+	attachXML := fmt.Sprintf(`<interface type="network">
+      <source network="%s"/>
+      <model type="%s"/>
+    </interface>`, networkName, model)
+
+	// Attach the network interface
+	if err := dom.AttachDevice(attachXML); err != nil {
+		return fmt.Errorf("failed to attach network interface: %w", err)
+	}
+
+	c.logger.Add("Network Interface Attached", name, "Success", fmt.Sprintf("Network interface attached to %s", networkName))
+	return nil
+}
+
 // isFileInKnownStoragePool checks if a file path is within known storage pools
 func isFileInKnownStoragePool(filePath string) bool {
 	// Get the absolute path

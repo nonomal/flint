@@ -540,7 +540,7 @@ func (s *Server) handleGetVolumes() http.HandlerFunc {
 func (s *Server) handleCreateVolume() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		poolName := chi.URLParam(r, "poolName")
-		
+
 		var req core.VolumeConfig
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, `{"error": "Invalid JSON in request body"}`, http.StatusBadRequest)
@@ -560,7 +560,7 @@ func (s *Server) handleCreateVolume() http.HandlerFunc {
 func (s *Server) handleCreateNetwork() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
-			Name string `json:"name"`
+			Name       string `json:"name"`
 			BridgeName string `json:"bridgeName"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -577,6 +577,52 @@ func (s *Server) handleCreateNetwork() http.HandlerFunc {
 		w.WriteHeader(http.StatusCreated)
 	}
 }
+
+func (s *Server) handleAttachDiskToVM() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		uuid := chi.URLParam(r, "uuid")
+		var req struct {
+			VolumePath string `json:"volumePath"`
+			TargetDev  string `json:"targetDev"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, `{"error": "Invalid JSON in request body"}`, http.StatusBadRequest)
+			return
+		}
+
+		err := s.client.AttachDiskToVM(uuid, req.VolumePath, req.TargetDev)
+		if err != nil {
+			http.Error(w, `{"error": "`+err.Error()+`"}`, http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"message": "Disk attached successfully"})
+	}
+}
+
+func (s *Server) handleAttachNetworkInterfaceToVM() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		uuid := chi.URLParam(r, "uuid")
+		var req struct {
+			NetworkName string `json:"networkName"`
+			Model       string `json:"model"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, `{"error": "Invalid JSON in request body"}`, http.StatusBadRequest)
+			return
+		}
+
+		err := s.client.AttachNetworkInterfaceToVM(uuid, req.NetworkName, req.Model)
+		if err != nil {
+			http.Error(w, `{"error": "`+err.Error()+`"}`, http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"message": "Network interface attached successfully"})
+	}
+}
 func (s *Server) handleDetectSSHKey() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		homeDir, err := os.UserHomeDir()
@@ -584,22 +630,22 @@ func (s *Server) handleDetectSSHKey() http.HandlerFunc {
 			http.Error(w, `{"error": "Failed to get user home directory"}`, http.StatusInternalServerError)
 			return
 		}
-		
+
 		sshKeyPath := filepath.Join(homeDir, ".ssh", "id_rsa.pub")
-		
+
 		if _, err := os.Stat(sshKeyPath); os.IsNotExist(err) {
 			w.Header().Set("Content-Type", "text/plain")
 			w.WriteHeader(http.StatusOK)
 			w.Write([]byte(""))
 			return
 		}
-		
+
 		keyContent, err := os.ReadFile(sshKeyPath)
 		if err != nil {
 			http.Error(w, `{"error": "Failed to read SSH key"}`, http.StatusInternalServerError)
 			return
 		}
-		
+
 		w.Header().Set("Content-Type", "text/plain")
 		w.WriteHeader(http.StatusOK)
 		w.Write(keyContent)
@@ -650,7 +696,7 @@ func (s *Server) handleCreateVMFromTemplate() http.HandlerFunc {
 
 		// Use the latest snapshot
 		latestSnapshot := snapshots[0]
-		
+
 		// Create VM from snapshot (simplified - in practice you'd clone the VM)
 		err = s.client.RevertToVMSnapshot(req.TemplateID, latestSnapshot.Name)
 		if err != nil {
@@ -660,8 +706,8 @@ func (s *Server) handleCreateVMFromTemplate() http.HandlerFunc {
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"uuid": req.TemplateID, // In practice, this would be a new UUID
-			"name": req.Name,
+			"uuid":    req.TemplateID, // In practice, this would be a new UUID
+			"name":    req.Name,
 			"message": "VM created from template successfully",
 		})
 	})
@@ -678,7 +724,7 @@ func (s *Server) handleGetVMTemplates() http.HandlerFunc {
 		}
 
 		var templates []map[string]interface{}
-		
+
 		for _, vm := range vms {
 			snapshots, err := s.client.GetVMSnapshots(vm.UUID)
 			if err != nil {
@@ -694,7 +740,7 @@ func (s *Server) handleGetVMTemplates() http.HandlerFunc {
 					"sourceVM":    vm.Name,
 					"vcpus":       vm.VCPUs,
 					"memory":      vm.MemoryKB / 1024, // Convert to MB
-					"diskSize":    20, // Default disk size
+					"diskSize":    20,                 // Default disk size
 					"createdAt":   time.Now().Format(time.RFC3339),
 				}
 				templates = append(templates, template)

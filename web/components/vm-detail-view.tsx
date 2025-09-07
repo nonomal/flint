@@ -44,6 +44,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogTrigger,
 } from "@/components/ui/dialog"
 import { VMDetailed, vmAPI } from "@/lib/api"
 
@@ -97,6 +98,14 @@ export function VMDetailView() {
   const [snapshotName, setSnapshotName] = useState("")
   const [snapshotDescription, setSnapshotDescription] = useState("")
   const [isCreatingSnapshot, setIsCreatingSnapshot] = useState(false)
+  const [isAddDiskOpen, setIsAddDiskOpen] = useState(false)
+  const [diskVolumePath, setDiskVolumePath] = useState("")
+  const [diskTargetDev, setDiskTargetDev] = useState("")
+  const [isAttachingDisk, setIsAttachingDisk] = useState(false)
+  const [isAddNetworkOpen, setIsAddNetworkOpen] = useState(false)
+  const [networkName, setNetworkName] = useState("")
+  const [networkModel, setNetworkModel] = useState("virtio")
+  const [isAttachingNetwork, setIsAttachingNetwork] = useState(false)
 
   useEffect(() => {
     const fetchVMData = async () => {
@@ -241,6 +250,94 @@ export function VMDetailView() {
         description: `Failed to delete snapshot: ${err instanceof Error ? err.message : 'Unknown error'}`,
         variant: "destructive",
       })
+    }
+  }
+
+  const handleAttachDisk = async () => {
+    if (!vmData?.uuid || !diskVolumePath || !diskTargetDev) return
+
+    try {
+      setIsAttachingDisk(true)
+      const response = await fetch(`/api/vms/${vmData.uuid}/attach-disk`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          volumePath: diskVolumePath,
+          targetDev: diskTargetDev
+        })
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || 'Failed to attach disk')
+      }
+
+      // Refresh VM data
+      const updatedVM = await vmAPI.getById(vmData.uuid)
+      setVmData(updatedVM)
+
+      // Close dialog and reset form
+      setIsAddDiskOpen(false)
+      setDiskVolumePath("")
+      setDiskTargetDev("")
+
+      toast({
+        title: "Success",
+        description: `Disk attached successfully as ${diskTargetDev}`,
+      })
+    } catch (err) {
+      console.error('Disk attachment failed:', err)
+      toast({
+        title: "Error",
+        description: `Failed to attach disk: ${err instanceof Error ? err.message : 'Unknown error'}`,
+        variant: "destructive",
+      })
+    } finally {
+      setIsAttachingDisk(false)
+    }
+  }
+
+  const handleAttachNetwork = async () => {
+    if (!vmData?.uuid || !networkName || !networkModel) return
+
+    try {
+      setIsAttachingNetwork(true)
+      const response = await fetch(`/api/vms/${vmData.uuid}/attach-network`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          networkName: networkName,
+          model: networkModel
+        })
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || 'Failed to attach network interface')
+      }
+
+      // Refresh VM data
+      const updatedVM = await vmAPI.getById(vmData.uuid)
+      setVmData(updatedVM)
+
+      // Close dialog and reset form
+      setIsAddNetworkOpen(false)
+      setNetworkName("")
+      setNetworkModel("virtio")
+
+      toast({
+        title: "Success",
+        description: `Network interface attached successfully`,
+      })
+    } catch (err) {
+      console.error('Network attachment failed:', err)
+      toast({
+        title: "Error",
+        description: `Failed to attach network interface: ${err instanceof Error ? err.message : 'Unknown error'}`,
+        variant: "destructive",
+      })
+    } finally {
+      setIsAttachingNetwork(false)
     }
   }
 
@@ -493,7 +590,7 @@ export function VMDetailView() {
               fetch(`/api/vms/${vmData.uuid}/serial-console`)
                 .then(response => {
                   if (response.ok) {
-                    router.push(`/vms/console#${vmData.uuid}`)
+                    router.push(`/vms/console?id=${vmData.uuid}`)
                   } else {
                     toast({
                       title: "Console Not Available",
@@ -666,13 +763,67 @@ export function VMDetailView() {
         <TabsContent value="storage" className="space-y-6 mt-4">
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="flex items-center justify-between">
-                Storage Devices
-                <Button size="sm">
-                  <Plus className="mr-2 h-4 w-4" />
-                  Add Disk
-                </Button>
-              </CardTitle>
+               <CardTitle className="flex items-center justify-between">
+                 Storage Devices
+                 <Dialog open={isAddDiskOpen} onOpenChange={setIsAddDiskOpen}>
+                   <DialogTrigger asChild>
+                     <Button size="sm">
+                       <Plus className="mr-2 h-4 w-4" />
+                       Add Disk
+                     </Button>
+                   </DialogTrigger>
+                   <DialogContent className="sm:max-w-[425px]">
+                     <DialogHeader>
+                       <DialogTitle>Add Disk to VM</DialogTitle>
+                       <DialogDescription>
+                         Attach a storage volume to this virtual machine.
+                       </DialogDescription>
+                     </DialogHeader>
+                     <div className="grid gap-4 py-4">
+                       <div className="grid grid-cols-4 items-center gap-4">
+                         <Label htmlFor="volume-path" className="text-right">
+                           Volume Path
+                         </Label>
+                         <Input
+                           id="volume-path"
+                           value={diskVolumePath}
+                           onChange={(e) => setDiskVolumePath(e.target.value)}
+                           className="col-span-3"
+                           placeholder="/var/lib/libvirt/images/disk.qcow2"
+                         />
+                       </div>
+                       <div className="grid grid-cols-4 items-center gap-4">
+                         <Label htmlFor="target-dev" className="text-right">
+                           Target Device
+                         </Label>
+                         <Input
+                           id="target-dev"
+                           value={diskTargetDev}
+                           onChange={(e) => setDiskTargetDev(e.target.value)}
+                           className="col-span-3"
+                           placeholder="vdb"
+                         />
+                       </div>
+                     </div>
+                     <DialogFooter>
+                       <Button
+                         type="submit"
+                         onClick={handleAttachDisk}
+                         disabled={isAttachingDisk || !diskVolumePath || !diskTargetDev}
+                       >
+                         {isAttachingDisk ? (
+                           <>
+                             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                             Attaching...
+                           </>
+                         ) : (
+                           "Attach Disk"
+                         )}
+                       </Button>
+                     </DialogFooter>
+                   </DialogContent>
+                 </Dialog>
+               </CardTitle>
             </CardHeader>
             <CardContent className="p-0">
               <Table>
@@ -712,13 +863,70 @@ export function VMDetailView() {
         <TabsContent value="networking" className="space-y-6 mt-4">
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="flex items-center justify-between">
-                Network Interfaces
-                <Button size="sm">
-                  <Plus className="mr-2 h-4 w-4" />
-                  Add Interface
-                </Button>
-              </CardTitle>
+               <CardTitle className="flex items-center justify-between">
+                 Network Interfaces
+                 <Dialog open={isAddNetworkOpen} onOpenChange={setIsAddNetworkOpen}>
+                   <DialogTrigger asChild>
+                     <Button size="sm">
+                       <Plus className="mr-2 h-4 w-4" />
+                       Add Interface
+                     </Button>
+                   </DialogTrigger>
+                   <DialogContent className="sm:max-w-[425px]">
+                     <DialogHeader>
+                       <DialogTitle>Add Network Interface to VM</DialogTitle>
+                       <DialogDescription>
+                         Attach a network interface to this virtual machine.
+                       </DialogDescription>
+                     </DialogHeader>
+                     <div className="grid gap-4 py-4">
+                       <div className="grid grid-cols-4 items-center gap-4">
+                         <Label htmlFor="network-name" className="text-right">
+                           Network
+                         </Label>
+                         <Input
+                           id="network-name"
+                           value={networkName}
+                           onChange={(e) => setNetworkName(e.target.value)}
+                           className="col-span-3"
+                           placeholder="default"
+                         />
+                       </div>
+                       <div className="grid grid-cols-4 items-center gap-4">
+                         <Label htmlFor="network-model" className="text-right">
+                           Model
+                         </Label>
+                         <select
+                           id="network-model"
+                           value={networkModel}
+                           onChange={(e) => setNetworkModel(e.target.value)}
+                           className="col-span-3 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                         >
+                           <option value="virtio">virtio</option>
+                           <option value="e1000">e1000</option>
+                           <option value="rtl8139">rtl8139</option>
+                         </select>
+                       </div>
+                     </div>
+                     <DialogFooter>
+                       <Button
+                         type="submit"
+                         onClick={handleAttachNetwork}
+                         disabled={isAttachingNetwork || !networkName}
+                       >
+                         {isAttachingNetwork ? (
+                           <>
+                             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                             Attaching...
+                           </>
+                         ) : (
+                           "Attach Interface"
+                         )}
+                       </Button>
+                     </DialogFooter>
+                   </DialogContent>
+                 </Dialog>
+               </CardTitle>
             </CardHeader>
             <CardContent className="p-0">
               <Table>
