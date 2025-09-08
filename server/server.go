@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"embed"
 	"encoding/hex"
 	"encoding/json"
@@ -12,6 +13,7 @@ import (
 	"github.com/ccheshirecat/flint/pkg/libvirtclient"
 	"github.com/ccheshirecat/flint/pkg/logger"
 	"github.com/go-chi/chi/v5"
+	"golang.org/x/crypto/bcrypt"
 	"io"
 	"net/http"
 	"os"
@@ -131,7 +133,13 @@ func (s *Server) loadOrGenerateConfig() {
 // generateAPIKey generates a secure API key
 func (s *Server) generateAPIKey() string {
 	bytes := make([]byte, 32)
-	rand.Read(bytes)
+	if _, err := rand.Read(bytes); err != nil {
+		logger.Error("Failed to generate secure API key", map[string]interface{}{
+			"error": err.Error(),
+		})
+		// This is a critical security failure - exit rather than use weak key
+		panic("Failed to generate cryptographically secure API key")
+	}
 	return hex.EncodeToString(bytes)
 }
 
@@ -300,12 +308,19 @@ func (s *Server) validatePassphrase(passphrase string) bool {
 		return false
 	}
 
-	// Hash the provided passphrase
-	hash := sha256.Sum256([]byte(passphrase))
-	providedHash := hex.EncodeToString(hash[:])
+	storedHash := s.getStoredPassphraseHash()
+	
+	// Check if it's an old SHA256 hash (64 hex chars) and migrate to bcrypt
+	if len(storedHash) == 64 {
+		// Legacy SHA256 hash - compare directly for backward compatibility
+		hash := sha256.Sum256([]byte(passphrase))
+		providedHash := hex.EncodeToString(hash[:])
+		return providedHash == storedHash
+	}
 
-	// Compare with stored hash
-	return providedHash == s.getStoredPassphraseHash()
+	// Use bcrypt comparison for new hashes
+	err := bcrypt.CompareHashAndPassword([]byte(storedHash), []byte(passphrase))
+	return err == nil
 }
 
 // getStoredPassphraseHash returns the stored passphrase hash
@@ -321,7 +336,7 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 		if authHeader != "" {
 			// Expected format: "Bearer <api-key>"
 			parts := strings.SplitN(authHeader, " ", 2)
-			if len(parts) == 2 && parts[0] == "Bearer" && parts[1] == s.apiKey {
+			if len(parts) == 2 && parts[0] == "Bearer" && subtle.ConstantTimeCompare([]byte(parts[1]), []byte(s.apiKey)) == 1 {
 				// Valid API key, continue
 				ctx := context.WithValue(r.Context(), "api_key", parts[1])
 				next.ServeHTTP(w, r.WithContext(ctx))
@@ -369,11 +384,16 @@ func (s *Server) rateLimitMiddleware(next http.Handler) http.Handler {
 func (s *Server) getClientIP(r *http.Request) string {
 	// Check X-Forwarded-For header first (for reverse proxies)
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		// Take the first IP in the chain
-		if idx := strings.Index(xff, ","); idx > 0 {
-			return strings.TrimSpace(xff[:idx])
+		// X-Forwarded-For format: client, proxy1, proxy2
+		// Take the leftmost (original client) IP
+		ips := strings.Split(xff, ",")
+		if len(ips) > 0 {
+			clientIP := strings.TrimSpace(ips[0])
+			// Validate it's a proper IP
+			if clientIP != "" && !strings.Contains(clientIP, " ") {
+				return clientIP
+			}
 		}
-		return strings.TrimSpace(xff)
 	}
 
 	// Check X-Real-IP header

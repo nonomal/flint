@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -14,6 +13,7 @@ import (
 	"github.com/ccheshirecat/flint/server"
 	libvirt "github.com/libvirt/libvirt-go"
 	"github.com/spf13/cobra"
+	"golang.org/x/crypto/bcrypt"
 	"log"
 	"os"
 	"path/filepath"
@@ -304,8 +304,12 @@ func handlePassphraseSetup(cfg *config.Config) error {
 
 // hashPassphrase creates a SHA256 hash of the passphrase
 func hashPassphrase(passphrase string) string {
-	hash := sha256.Sum256([]byte(passphrase))
-	return hex.EncodeToString(hash[:])
+	// Use bcrypt with cost 12 (recommended for 2024)
+	hash, err := bcrypt.GenerateFromPassword([]byte(passphrase), 12)
+	if err != nil {
+		log.Fatalf("Failed to hash passphrase: %v", err)
+	}
+	return string(hash)
 }
 
 // saveConfig saves the configuration to file
