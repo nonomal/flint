@@ -6,11 +6,54 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"text/tabwriter"
 	"time"
 
 	"github.com/spf13/cobra"
 )
+
+// getAPIKey retrieves the API key from config file
+func getAPIKey() (string, error) {
+	configPath := filepath.Join(os.Getenv("HOME"), ".flint", "config.json")
+
+	// Read config file
+	file, err := os.Open(configPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to read config file: %w", err)
+	}
+	defer file.Close()
+
+	var config map[string]interface{}
+	if err := json.NewDecoder(file).Decode(&config); err != nil {
+		return "", fmt.Errorf("failed to decode config: %w", err)
+	}
+
+	apiKey, exists := config["api_key"]
+	if !exists || apiKey == "" {
+		return "", fmt.Errorf("API key not found in config. Please run 'flint api-key' to get your API key")
+	}
+
+	return apiKey.(string), nil
+}
+
+// createAuthenticatedRequest creates an HTTP request with API key authentication
+func createAuthenticatedRequest(method, url string) (*http.Request, error) {
+	apiKey, err := getAPIKey()
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(method, url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	return req, nil
+}
 
 var imageCmd = &cobra.Command{
 	Use:   "image",
@@ -25,16 +68,25 @@ var imageListCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		baseURL, _ := cmd.Flags().GetString("server")
 		if baseURL == "" {
-			baseURL = "http://localhost:8080"
+			baseURL = "http://localhost:5550"
 		}
 
-		resp, err := http.Get(baseURL + "/api/image-repository")
+		req, err := createAuthenticatedRequest("GET", baseURL+"/api/image-repository")
+		if err != nil {
+			log.Fatalf("Authentication failed: %v", err)
+		}
+
+		client := &http.Client{}
+		resp, err := client.Do(req)
 		if err != nil {
 			log.Fatalf("Failed to connect to server: %v", err)
 		}
 		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
+			if resp.StatusCode == http.StatusUnauthorized {
+				log.Fatalf("Authentication failed. Please run 'flint api-key' to get your API key")
+			}
 			log.Fatalf("Server returned error: %s", resp.Status)
 		}
 
@@ -77,17 +129,26 @@ var imageDownloadCmd = &cobra.Command{
 		imageID := args[0]
 		baseURL, _ := cmd.Flags().GetString("server")
 		if baseURL == "" {
-			baseURL = "http://localhost:8080"
+			baseURL = "http://localhost:5550"
 		}
 
 		// Start download
-		resp, err := http.Post(baseURL+"/api/image-repository/"+imageID+"/download", "application/json", nil)
+		req, err := createAuthenticatedRequest("POST", baseURL+"/api/image-repository/"+imageID+"/download")
+		if err != nil {
+			log.Fatalf("Authentication failed: %v", err)
+		}
+
+		client := &http.Client{}
+		resp, err := client.Do(req)
 		if err != nil {
 			log.Fatalf("Failed to start download: %v", err)
 		}
 		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
+			if resp.StatusCode == http.StatusUnauthorized {
+				log.Fatalf("Authentication failed. Please run 'flint api-key' to get your API key")
+			}
 			log.Fatalf("Failed to start download: %s", resp.Status)
 		}
 
@@ -101,7 +162,12 @@ var imageDownloadCmd = &cobra.Command{
 			for {
 				time.Sleep(2 * time.Second)
 				
-				statusResp, err := http.Get(baseURL + "/api/image-repository/" + imageID + "/status")
+				statusReq, err := createAuthenticatedRequest("GET", baseURL+"/api/image-repository/"+imageID+"/status")
+				if err != nil {
+					log.Printf("Authentication failed for status check: %v", err)
+					continue
+				}
+				statusResp, err := client.Do(statusReq)
 				if err != nil {
 					log.Printf("Failed to check status: %v", err)
 					continue
@@ -136,12 +202,18 @@ var imageStatusCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		baseURL, _ := cmd.Flags().GetString("server")
 		if baseURL == "" {
-			baseURL = "http://localhost:8080"
+			baseURL = "http://localhost:5550"
 		}
 
 		if len(args) == 0 {
 			// Show status for all images
-			resp, err := http.Get(baseURL + "/api/image-repository")
+			req, err := createAuthenticatedRequest("GET", baseURL+"/api/image-repository")
+			if err != nil {
+				log.Fatalf("Authentication failed: %v", err)
+			}
+
+			client := &http.Client{}
+			resp, err := client.Do(req)
 			if err != nil {
 				log.Fatalf("Failed to connect to server: %v", err)
 			}
@@ -177,7 +249,13 @@ var imageStatusCmd = &cobra.Command{
 		} else {
 			// Show status for specific image
 			imageID := args[0]
-			resp, err := http.Get(baseURL + "/api/image-repository/" + imageID + "/status")
+			req, err := createAuthenticatedRequest("GET", baseURL+"/api/image-repository/"+imageID+"/status")
+			if err != nil {
+				log.Fatalf("Authentication failed: %v", err)
+			}
+
+			client := &http.Client{}
+			resp, err := client.Do(req)
 			if err != nil {
 				log.Fatalf("Failed to check status: %v", err)
 			}
@@ -210,8 +288,8 @@ func init() {
 	imageCmd.AddCommand(imageStatusCmd)
 
 	// Add server flag to all image commands
-	imageListCmd.Flags().String("server", "http://localhost:8080", "Flint server URL")
-	imageDownloadCmd.Flags().String("server", "http://localhost:8080", "Flint server URL")
+	imageListCmd.Flags().String("server", "http://localhost:5550", "Flint server URL")
+	imageDownloadCmd.Flags().String("server", "http://localhost:5550", "Flint server URL")
 	imageDownloadCmd.Flags().Bool("wait", false, "Wait for download to complete")
-	imageStatusCmd.Flags().String("server", "http://localhost:8080", "Flint server URL")
+	imageStatusCmd.Flags().String("server", "http://localhost:5550", "Flint server URL")
 }

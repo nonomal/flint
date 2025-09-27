@@ -1077,10 +1077,25 @@ export function CreateVMWizard() {
                   ISOPath: config.sourceType === 'iso' ? config.selectedSource : '',
                   imageName: config.imageName,
                   imageType: config.imageType,
-                  enableCloudInit: config.enableCloudInit,
-                  cloudInit: config.enableCloudInit ? config.cloudInitConfig : null,
                   StartOnCreate: config.autostart,
                   NetworkName: config.networks[0]?.source || '',
+                  CloudInit: config.enableCloudInit ? {
+                    CommonFields: {
+                      hostname: config.cloudInitConfig.hostname || '',
+                      username: config.cloudInitConfig.username || '',
+                      password: config.cloudInitConfig.password || '',
+                      packages: config.cloudInitConfig.packages || [],
+                      sshKeys: config.cloudInitConfig.sshKeys?.join('\n') || '',
+                      networkConfig: config.cloudInitConfig.networkConfig ? {
+                        useDHCP: config.cloudInitConfig.networkConfig.dhcp,
+                        ipAddress: config.cloudInitConfig.networkConfig.ipAddress || '',
+                        prefix: config.cloudInitConfig.networkConfig.prefix || 24,
+                        gateway: config.cloudInitConfig.networkConfig.gateway || '',
+                        dnsServers: config.cloudInitConfig.networkConfig.dnsServers || []
+                      } : null
+                    },
+                    RawUserData: config.cloudInitConfig.customYaml || ''
+                  } : null
                 };
                 handleFormSubmit(formData);
               }}
